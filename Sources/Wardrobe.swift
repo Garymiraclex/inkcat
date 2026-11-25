@@ -14,7 +14,7 @@ final class Wardrobe: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private let composer = Composer(), queue = DispatchQueue(label: "InkCat.wardrobe", qos: .userInitiated)
-    private var turn = 0, watch: FolderWatch?
+    private var turn = 0, watch: FolderWatch?, worn: [String] = []
 
     private init() {
         if defaults.string(forKey: "skin") == "gamer" {  // 1.1 的「电竞」
@@ -82,13 +82,18 @@ final class Wardrobe: ObservableObject {
 
     // MARK: 合成
 
+    private func missingText(_ slot: Slot) -> String {
+        if let pack = packs.first(where: { $0.id == choice(slot) }) { return "素材包「\(pack.title)」里没有完整的\(slot.title)" }
+        return "找不到素材包「\(choice(slot).replacingOccurrences(of: "user/", with: ""))」"
+    }
+
     private func refresh() {
         turn += 1
         let mine = turn, fallback = packs.first { $0.id == Pack.classic }!
         var outfit: [Slot: Composer.Choice] = [:], missing: [Slot: String] = [:]
         for slot in Slot.allCases {
             if let pack = pack(slot) { outfit[slot] = .init(pack: pack, place: place(slot)) }
-            else if !choice(slot).isEmpty { missing[slot] = "素材包「\(choice(slot).replacingOccurrences(of: "user/", with: ""))」里没有\(slot.title)" }
+            else if !choice(slot).isEmpty { missing[slot] = missingText(slot) }
             if outfit[slot] == nil, !slot.isOptional { outfit[slot] = .init(pack: fallback, place: Place()) }
         }
         busy = true
@@ -99,6 +104,9 @@ final class Wardrobe: ObservableObject {
                 guard mine == turn else { return }
                 busy = false
                 (problems, warnings) = (result.problems.merging(missing) { a, _ in a }, result.warnings)
+                let ids = Slot.allCases.map(choice)
+                if !result.problems.isEmpty, worn == ids { return }  // 图改坏了，先穿着上一次的
+                if result.problems.isEmpty { worn = ids }
                 look = result.look
                 onChange.forEach { $0(look) }
             }

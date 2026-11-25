@@ -46,6 +46,7 @@ struct LookPane: View {
                     ForEach(wardrobe.packs(for: slot)) { Text($0.title).tag($0.id) }
                 }
                 .labelsHidden()
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Button { adjusting = adjusting == slot ? nil : slot } label: {
                     Image(systemName: "arrow.up.and.down.and.arrow.left.and.right").frame(width: 14)
                 }
@@ -54,7 +55,7 @@ struct LookPane: View {
                 .opacity(slot == .cat ? 0 : 1)
             }
             if let problem = wardrobe.problems[slot] {
-                note(problem + (slot.isOptional ? "" : "，先用原版"), .red)
+                note(problem, .red)
             } else if let warning = wardrobe.warnings[slot] {
                 note(warning, .orange)
             }

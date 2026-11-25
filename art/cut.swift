@@ -51,16 +51,19 @@ extension Cutter {
         func split(_ desk: Raster, grow: CGFloat, pad: ClosedRange<Float>, to pack: String) {
             var d = desk
             for y in 0..<H { for x in 0..<W where !onDesk(x, y) { d[x, y] = .zero } }
-            let keys = mask(keyboard, grow: grow, smooth: false), ring = mask(keyboard, grow: grow + 1.5, smooth: false)
+            let keys = mask(keyboard, grow: grow, smooth: false), near = mask(keyboard, grow: grow + 1.5, smooth: false), far = mask(keyboard, grow: grow + 4, smooth: false)
+            // 键盘后面露出的桌垫很窄，少抹一点
+            var ring = near
+            for y in 0..<H { for x in 0..<W where x < 330 || Double(y) > 608 + 0.19 * Double(x - 330) { ring[y * W + x] = far[y * W + x] } }
             part(cut(d, keys), "\(pack)/keyboard")
             let nowhere = (P(x: 0, y: -9), P(x: 1, y: -9))
             var p = inpaint(d, ring, pad: pad, edge: nowhere)
             for i in 0..<W * H where ring[i] > 0 && keys[i] < 1 && d.px[i].w < 0.95 { p.px[i] = d.px[i] * (1 - keys[i]) + p.px[i] * keys[i] }
-            for i in 0..<W * H where solid[i] < 1 && keys[i] > 0 { p.px[i] *= solid[i] }
+            for i in 0..<W * H where solid[i] < 1 && (keys[i] > 0 || ring[i] > 0 && i / W < 676) { p.px[i] *= solid[i] }
             part(p, "\(pack)/pad")
         }
         // 键盘左侧的桌垫边收成一条直线，免得换键盘后露出锯齿
-        let solid = mask(pts([160,720, 172,700, 175,676, 184,662, 200,652, 298,597, 318,590, 345,586, 700,640, 740,690, 600,810, 430,780]), smooth: false)
+        let solid = mask(pts([150,720, 160,696, 168,680, 178,667, 200,652, 298,597, 318,590, 345,586, 700,640, 740,690, 600,810, 430,780]), smooth: false)
         split(plateCover, grow: 0, pad: 0.62...1, to: "classic")
         part(cut(cat.cover, mask(mouse)), "classic/mouse")
 

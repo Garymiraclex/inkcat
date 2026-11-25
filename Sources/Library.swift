@@ -97,7 +97,7 @@ enum Library {
     /// 只读普通文件，不跟随链接，限制大小。
     static func read(_ url: URL, limit: Int = 20 << 20) throws -> Data {
         let name = url.lastPathComponent
-        let v = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard let v = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]) else { throw Problem("找不到 \(name)") }
         guard v.isRegularFile == true, v.isSymbolicLink != true else { throw Problem("\(name) 不是普通文件") }
         guard v.fileSize ?? 0 <= limit else { throw Problem("\(name) 太大，不能超过 \(limit >> 20) MB") }
         return try Data(contentsOf: url)
@@ -105,6 +105,7 @@ enum Library {
 
     /// 读成 1200×896；同比例的大图会缩小。
     static func image(_ data: Data, name: String) throws -> CGImage {
+        if data.starts(with: [0x89, 0x50, 0x4E, 0x47]), data.suffix(12).range(of: Data("IEND".utf8)) == nil { throw Problem("\(name).png 不完整") }  // 还在复制
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let info = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let w = info[kCGImagePropertyPixelWidth] as? Int, let h = info[kCGImagePropertyPixelHeight] as? Int else { throw Problem("\(name).png 打不开") }

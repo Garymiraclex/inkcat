@@ -33,7 +33,6 @@ struct Look {
 /// 把选中的部位合成一身装扮。可在后台线程使用。
 final class Composer {
     private var cats: [String: CookedCat] = [:]
-    private(set) var usedCaches: Set<String> = []
 
     struct Choice { let pack: Pack, place: Place }
     struct Result { var look = Look(), problems: [Slot: String] = [:], warnings: [Slot: String] = [:] }
@@ -76,6 +75,13 @@ final class Composer {
         for (name, box) in [("face_sleep", CGRect(x: 400, y: 200, width: 360, height: 272)), ("eyes_focus", CGRect(x: 400, y: 250, width: 290, height: 150)), ("eyes_tense", CGRect(x: 400, y: 250, width: 290, height: 150))] where !front.isEmpty {
             images[name] = Self.erase(images[name]!, front.map { $0.cropping(to: box)! })
         }
+        if let scarf, cat.joint.isEmpty {  // 一直盖在手臂上的鬃毛，外面还有围巾
+            let box = CGRect(x: 0, y: 0, width: 120, height: 120)
+            images["shoulder"] = Self.draw(box.size) { c in
+                c.draw(cat.images["shoulder"]!, in: box)
+                c.draw(scarf.cropping(to: CGRect(x: 396, y: 440, width: 120, height: 120))!, in: box)
+            }
+        }
         let box = Self.mouseBox(mouse)
         images["mouse"] = mouse.cropping(to: box)!
         result.look.images = images.mapValues { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
@@ -90,9 +96,11 @@ final class Composer {
 
     private func part(_ c: Choice, _ name: String) throws -> CGImage {
         let image = try Cutout.clean(Library.image(Library.read(c.pack.file(name)), name: name), name: name)
-        guard c.place != Place() else { return image }
         guard let box = Cutout.bounds(image) else { throw Problem("\(name).png 是空的") }
-        return Self.draw { $0.concatenate(c.place.transform(about: CGPoint(x: box.midX, y: box.midY))); $0.draw(image, in: Self.canvas) }
+        guard c.place != Place() else { return image }
+        let moved = Self.draw { $0.concatenate(c.place.transform(about: CGPoint(x: box.midX, y: box.midY))); $0.draw(image, in: Self.canvas) }
+        guard Cutout.bounds(moved) != nil else { throw Problem("\(name).png 被移到画面外了") }
+        return moved
     }
 
     /// 键位跟着键盘一起移动、缩放。
@@ -111,7 +119,7 @@ final class Composer {
     private static func mouseBox(_ mouse: CGImage) -> CGRect {
         let b = Cutout.bounds(mouse) ?? CGRect(x: 680, y: 112, width: 176, height: 136)
         let w = max(176, b.width + 4), h = max(136, b.height + 4)
-        return CGRect(x: (b.midX - w / 2).rounded(), y: (Scene.size.height - b.midY - h / 2).rounded(), width: w, height: h)  // 左上原点
+        return CGRect(x: (b.midX - w / 2).rounded(), y: (Scene.size.height - b.midY - h / 2).rounded(), width: w, height: h).intersection(canvas)  // 左上原点
     }
 
     /// 素材包写了就用，没写就把原版的按键按鼠标外框缩放过去。
@@ -142,7 +150,6 @@ final class Composer {
         data.forEach { hash.update(data: $0) }
         let key = hash.finalize().map { String(format: "%02x", $0) }.joined()
         let cached = Library.cache.appendingPathComponent(key, isDirectory: true)
-        usedCaches.insert(key)
         var cat: CookedCat
         if let known = cats[key] ?? Self.restore(cached) {
             cat = known
@@ -234,6 +241,9 @@ final class Composer {
         try? JSONEncoder().encode(cat.joint).write(to: temp.appendingPathComponent("joint.json"))
         try? note.write(to: temp.appendingPathComponent("note.txt"), atomically: false, encoding: .utf8)
         try? fm.moveItem(at: temp, to: url)  // 写完整才启用
+        func date(_ u: URL) -> Date { (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast }
+        let all = (try? fm.contentsOfDirectory(at: url.deletingLastPathComponent(), includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        all.sorted { date($0) > date($1) }.dropFirst(8).forEach { try? fm.removeItem(at: $0) }
     }
 
     private static func restore(_ url: URL) -> CookedCat? {
@@ -245,14 +255,6 @@ final class Composer {
         }
         guard let data = try? Data(contentsOf: url.appendingPathComponent("joint.json")), let joint = try? JSONDecoder().decode([Int].self, from: data), joint.count != 1 else { return nil }
         return CookedCat(images: images, joint: joint)
-    }
-
-    /// 删掉这次用不到的旧缓存。
-    func prune() {
-        let fm = FileManager.default
-        for name in (try? fm.contentsOfDirectory(atPath: Library.cache.path)) ?? [] where !usedCaches.contains(name) {
-            try? fm.removeItem(at: Library.cache.appendingPathComponent(name))
-        }
     }
 
     // MARK: 画图
