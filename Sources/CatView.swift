@@ -61,17 +61,19 @@ private extension CALayer {
 /// 一条手臂：素材竖直放置，肩点在 (120, 80)。旋转指向目标，只拉伸小臂中段，爪子保持原样。
 private final class Arm {
     let layer = CALayer()
-    private let shoulder: CGPoint, length: CGFloat
+    private let asset: String, shoulder: CGPoint, length: CGFloat
     private static let image = CGSize(width: 240, height: 400), root: CGFloat = 80
 
     init(_ asset: String, shoulder: CGPoint, length: CGFloat, in parent: CALayer) {
         self.shoulder = shoulder
         self.length = length
-        layer.contents = Bundle.main.image(forResource: asset)
+        self.asset = asset
         layer.contentsCenter = CGRect(x: 0, y: 1 - (Self.root + length * 0.6) / Self.image.height, width: 1, height: length * 0.4 / Self.image.height)
         layer.position = shoulder
         parent.addSublayer(layer)
     }
+
+    func dress(_ skin: Skin) { layer.contents = skin.image(asset) }
 
     func reach(_ tip: CGPoint, duration: CFTimeInterval) {
         let dx = tip.x - shoulder.x, dy = tip.y - shoulder.y
@@ -91,13 +93,14 @@ private final class Arm {
 private final class BendyArm {
     let layer = CALayer()
     private static let width: CGFloat = 140, length: CGFloat = 175, count = 42, paw: CGFloat = 76
-    private let images: [NSImage?]  // 外展、内收
-    private var slices: [CALayer] = [], tucked: Bool?
+    private let asset: String
+    private var images: [NSImage?] = [nil, nil]  // 外展、内收
+    private var slices: [CALayer] = [], tucked = false
     /// 内收时盖住根部的肩头。
     private let shoulder = CALayer(asset: "shoulder", origin: CGPoint(x: 396, y: 440), size: CGSize(width: 120, height: 120))
 
     init(_ asset: String, in parent: CALayer) {
-        images = [asset, asset + "_in"].map { Bundle.main.image(forResource: $0) }
+        self.asset = asset
         let n = CGFloat(Self.count)
         for i in 0..<Self.count {
             let s = CALayer()
@@ -112,6 +115,11 @@ private final class BendyArm {
         layer.addSublayer(shoulder)
         shoulder.zPosition = 1
         parent.addSublayer(layer)
+    }
+
+    func dress(_ skin: Skin) {
+        images = [asset, asset + "_in"].map(skin.image)
+        slices.forEach { $0.contents = images[tucked ? 1 : 0] }
     }
 
     func reach(_ target: CGPoint, duration: CFTimeInterval) {
@@ -148,7 +156,7 @@ private final class BendyArm {
         let step = Self.length / CGFloat(Self.count)
         if tucked != (inward > 0.15) {
             tucked = inward > 0.15
-            withoutAnimation { slices.forEach { $0.contents = images[tucked! ? 1 : 0] } }
+            withoutAnimation { slices.forEach { $0.contents = images[tucked ? 1 : 0] } }
         }
         CATransaction.begin()
         CATransaction.setAnimationDuration(duration)
@@ -170,11 +178,13 @@ final class CatView: NSView {
     static let baseSize = CGSize(width: 300, height: 224)
     var showsBubbles = true
 
+    var skin = Skin.current { didSet { withoutAnimation(dress) } }
+
     /// 设置窗口里的演示猫：不看真实输入，所有动作可用。
     private let isPreview: Bool
 
     private enum Pose: String { case normal = "plate", cover = "plate_cover" }
-    private let images = Dictionary(uniqueKeysWithValues: [Pose.normal, .cover].map { ($0, Bundle.main.image(forResource: $0.rawValue)) })
+    private var images: [Pose: NSImage?] = [:]
     private let tail = CALayer(asset: "tail", origin: CGPoint(x: 860, y: 290), size: CGSize(width: 240, height: 400))
     private let mood = CALayer(), blush = CALayer(), sweat = CALayer()
     private let squints = ["eyes_focus", "eyes_tense"].map { CALayer(asset: $0, origin: CGPoint(x: 400, y: 250), size: CGSize(width: 290, height: 150)) }
@@ -222,7 +232,6 @@ final class CatView: NSView {
         plate.frame = CGRect(origin: .zero, size: Scene.size)
         plate.minificationFilter = .trilinear
         stage.addSublayer(plate)
-        setPose(.normal)
         face.opacity = 0
         buildMood()
         stage.addSublayer(face)
@@ -242,7 +251,6 @@ final class CatView: NSView {
         mouse.shadowOpacity = 0.22
         mouse.shadowRadius = 5
         mouse.shadowOffset = CGSize(width: 9, height: -7)
-        buildButtons()
         stage.addSublayer(mouse)
 
         stage.addSublayer(arms)
@@ -250,12 +258,26 @@ final class CatView: NSView {
         right = BendyArm("arm_right", in: arms)
         left = Arm("arm_left", shoulder: Scene.at(815, 572), length: 233, in: arms)
         mouser = Arm("arm_mouse", shoulder: Scene.at(804, 560), length: 151, in: arms)
+        dress()
         moveMouse(to: CGPoint(x: 0.5, y: 0.5))
         left.reach(leftRest, duration: 0)
         right.reach(rightRest, duration: 0)
         mouser.reach(mousePaw, duration: 0)
         showLeftArm()
         stage.addSublayer(bubbles)
+    }
+
+    /// 换上当前皮肤的图。
+    private func dress() {
+        images = Dictionary(uniqueKeysWithValues: [Pose.normal, .cover].map { ($0, skin.image($0.rawValue)) })
+        face.contents = skin.image("face_sleep")
+        mouse.contents = skin.image("mouse")
+        left.dress(skin)
+        right.dress(skin)
+        mouser.dress(skin)
+        buildButtons()
+        setPose(secure ? .cover : .normal)
+        hitMap = makeHitMap()
     }
 
     /// 右肩外侧的圆弧，手臂内收时补住轮廓。
@@ -282,29 +304,27 @@ final class CatView: NSView {
 
     /// 左右键高亮、火花与滚轮，坐标取自鼠标素材（左上原点）。
     private func buildButtons() {
-        func shape(_ p: [(CGFloat, CGFloat)], closed: Bool = true) -> CGPath {
+        func shape(_ p: Skin.Outline, closed: Bool = true) -> CGPath {
             let path = CGMutablePath()
             path.addLines(between: p.map { CGPoint(x: $0.0, y: mouse.bounds.height - $0.1) })
             if closed { path.closeSubpath() }
             return path
         }
-        let areas: [[(CGFloat, CGFloat)]] = [
-            [(40, 109), (43, 98), (48, 91), (54, 86), (64, 68), (72, 50), (98, 60), (112, 72), (101, 92), (90, 104), (76, 110), (56, 112)],
-            [(35, 108), (38, 98), (42, 90), (39, 84), (43, 72), (50, 62), (60, 59), (64, 50), (50, 35), (38, 47), (24, 67), (17, 84), (18, 97), (26, 104)],
-        ]
-        let rays: [[[(CGFloat, CGFloat)]]] = [
+        mouse.sublayers?.forEach { $0.removeFromSuperlayer() }
+        let parts = skin.mouseParts
+        let rays: [[Skin.Outline]] = [
             [[(44, 140), (36, 164)], [(78, 140), (80, 168)], [(110, 132), (124, 155)]],
             [[(2, 70), (-22, 62)], [(-2, 96), (-28, 102)], [(12, 122), (-8, 142)]],
         ]
-        for (area, ray) in zip(areas, rays) {  // 左键、右键
+        buttons = zip([parts.left, parts.right], rays).map { area, ray in
             let button = CALayer()
             button.add(shape(area), fill: glow.withAlphaComponent(0.85))
             ray.forEach { button.add(shape($0, closed: false), stroke: spark, width: 10) }
             button.opacity = 0
             mouse.addSublayer(button)
-            buttons.append(button)
+            return button
         }
-        wheel = mouse.add(shape([(42, 87), (42, 80), (47, 71), (54, 64), (62, 64), (62, 69), (56, 79), (51, 87), (46, 89)]), fill: glow, stroke: ink, width: 4)
+        wheel = mouse.add(shape(parts.wheel), fill: glow, stroke: ink, width: 4)
         wheel.opacity = 0
     }
 
@@ -325,7 +345,8 @@ final class CatView: NSView {
     // MARK: 拖动
 
     /// 画面的不透明区域，每点一字节。
-    private lazy var hitMap: [UInt8] = {
+    private var hitMap: [UInt8] = []
+    private func makeHitMap() -> [UInt8] {
         let w = Int(Self.baseSize.width), h = Int(Self.baseSize.height)
         var pixels = [UInt8](repeating: 0, count: w * h)
         let k = Self.baseSize.width / Scene.size.width
@@ -340,7 +361,7 @@ final class CatView: NSView {
             }
         }
         return pixels
-    }()
+    }
 
     func contains(screenPoint p: CGPoint) -> Bool {
         guard let window else { return false }

@@ -150,7 +150,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(quit)
     }
 
-    private lazy var settings = SettingsWindow { [unowned self] in applyPrivacy() }
+    private lazy var settings = SettingsWindow(onPrivacyChange: { [unowned self] in applyPrivacy() }, onSkinChange: { [cat] in cat.skin = $0 })
     @objc private func openPanel() { settings.show() }
 
     @objc private func openSettings() {

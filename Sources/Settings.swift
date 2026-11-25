@@ -35,7 +35,8 @@ private final class Player: ObservableObject {
 
 private struct SettingsView: View {
     @ObservedObject var player: Player
-    let onPrivacyChange: () -> Void
+    let onPrivacyChange: () -> Void, onSkinChange: (Skin) -> Void
+    @AppStorage("skin") private var skin = Skin.classic
     @AppStorage("privacy") private var privacy = true
     @AppStorage("tail") private var tail = true
     @AppStorage("mood") private var mood = true
@@ -90,6 +91,10 @@ private struct SettingsView: View {
                 Toggle("隐私模式（不读取按键）", isOn: $privacy).toggleStyle(.switch).controlSize(.small)
                 Text(privacy ? "只感知敲击次数和节奏" : "按了什么键会显示在屏幕上（需「输入监控」权限）")
                     .font(.caption).foregroundColor(privacy ? .secondary : .orange).fixedSize()
+                Picker("外观", selection: $skin) {
+                    ForEach(Skin.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .frame(width: 220)
                 Picker("表情灵敏度", selection: $moodScale) {
                     Text("灵敏").tag(0.7)
                     Text("普通").tag(1.0)
@@ -113,18 +118,25 @@ private struct SettingsView: View {
             }
             .frame(width: 330)
         }
-        .frame(height: 540)
+        .frame(height: 570)
         .onChange(of: privacy) { _ in onPrivacyChange() }
+        .onChange(of: skin) {
+            player.cat.skin = $0
+            onSkinChange($0)
+        }
     }
 }
 
 final class SettingsWindow {
-    private let player = Player(), onPrivacyChange: () -> Void
+    private let player = Player(), onPrivacyChange: () -> Void, onSkinChange: (Skin) -> Void
 
-    init(onPrivacyChange: @escaping () -> Void) { self.onPrivacyChange = onPrivacyChange }
+    init(onPrivacyChange: @escaping () -> Void, onSkinChange: @escaping (Skin) -> Void) {
+        self.onPrivacyChange = onPrivacyChange
+        self.onSkinChange = onSkinChange
+    }
 
     private lazy var window: NSWindow = {
-        let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(player: player, onPrivacyChange: onPrivacyChange)))
+        let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(player: player, onPrivacyChange: onPrivacyChange, onSkinChange: onSkinChange)))
         w.title = "墨团 · 设置与演示"
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false

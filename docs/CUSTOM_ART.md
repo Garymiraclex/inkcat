@@ -2,7 +2,7 @@
 
 代码是 MIT，可以换上自己的素材，改完再发布。仓库里的猫图[保留所有权利](../LICENSE-ART.md)：可以照着尺寸和位置对位，但不要描摹或修改它们再发布。
 
-发布前请清掉 `Assets/`、`art/frames/`、`docs/` 里所有原图，包括 `status.png` 和 README 预览图。
+发布前请清掉 `Assets/`（含 `Assets/gamer/`）、`art/frames/`、`art/skins/`、`docs/` 里所有原图，包括 `status.png` 和 README 预览图。
 
 ## 选哪种做法
 
@@ -30,7 +30,7 @@
 脚本只读这 4 张，其余几张是备用的原画。
 
 ```bash
-swift art/cut.swift art/frames Assets
+swift -O art/cut.swift art/frames Assets
 ./build.sh && open InkCat.app
 ```
 
@@ -67,6 +67,18 @@ swift art/cut.swift art/frames Assets
 - **左臂会拉伸**：`arm_left` 约第 127–220 行、`arm_mouse` 约第 110–171 行会被拉长，这一段花纹尽量简单。
 - **右臂会切成薄片弯曲**，爪子部分不伸缩。
 
+## 只换外设（皮肤）
+
+猫不变，只换耳机、键盘、鼠标、桌垫，参照 `art/skins/gamer/`：以 `idle.png`、`cover_eyes.png` 为底图改图，机位、键位和猫逐像素对齐。
+
+```bash
+swift -O art/cut.swift art/frames Assets/gamer art/skins/gamer
+```
+
+皮肤目录里没有的图沿用 `Assets/`。耳罩、鼠标的轮廓和桌垫颜色写在 `art/cut.swift` 的 `if let skin` 一段，鼠标亮区在 `Sources/Skin.swift`。新增一套皮肤还要在 `Skin` 里加一项，并在 `build.sh` 里复制它的目录。
+
+不要电竞皮肤：删掉 `Assets/gamer`，去掉 `build.sh` 里的 `Assets/gamer` 和 `Skin` 中的 `gamer`。
+
 ## 换毛色和画风时要改的代码
 
 都在 `Sources/CatView.swift`，除非另有说明：
@@ -75,7 +87,7 @@ swift art/cut.swift art/frames Assets
 |---|---|
 | 右肩补块的毛色和描边（**换毛色必改**） | `buildJoint()` 里的 `0xB59B70`、`0x3B2418` |
 | 描边、气泡、亮光、火花的颜色 | 文件开头的 `ink`、`paper`、`glow`、`spark` |
-| 鼠标左右键和滚轮的亮区 | `buildButtons()`，换鼠标造型时改 |
+| 鼠标左右键和滚轮的亮区 | `Sources/Skin.swift` 的 `mouseParts`，换鼠标造型时改 |
 | 腮红、汗滴的位置 | `buildMood()` |
 | 气泡按键种类的配色 | `Keyboard.swift` 的 `tint` |
 | 桌垫上沿补线的颜色（只影响做法 A） | `art/cut.swift` 的 `SIMD4(0.24, 0.16, 0.13, 1)` |

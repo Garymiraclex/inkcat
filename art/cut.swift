@@ -1,4 +1,5 @@
 // 把整帧图拆成活动层：swift cut.swift <frames 目录> <输出目录>。坐标为 1200×896 像素，左上原点。
+// 加第三个参数 <皮肤目录> 则只生成皮肤：猫取自 frames，耳机、键盘、鼠标、桌垫取自皮肤目录。
 import AppKit
 
 typealias P = CGPoint
@@ -32,7 +33,11 @@ struct Image {
     }
 }
 
+let skin = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : nil
+let skinned = ["plate", "plate_cover", "face_sleep", "mouse", "arm_left", "arm_mouse", "arm_right", "arm_right_in"]
+
 func write(_ cg: CGImage, _ name: String) {
+    if skin != nil, !skinned.contains(name) { return }
     try! NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])!
         .write(to: URL(fileURLWithPath: CommandLine.arguments[2] + "/\(name).png"))
 }
@@ -80,10 +85,13 @@ func cut(_ a: Image, _ m: [Float]) -> Image {
     return o
 }
 
-/// 用扩散填补挖空区域，只取浅色桌垫作边界（忽略描边与透明处）。
-func inpaint(_ a: Image, _ m: [Float]) -> Image {
+func luma(_ v: SIMD4<Float>) -> Float { (v.x + v.y + v.z) / 3 }
+
+/// 用扩散填补挖空区域，只取亮度在 `pad` 内的桌垫作边界（忽略描边与透明处），并补上被挡住的桌垫上沿。
+func inpaint(_ a: Image, _ m: [Float], pad: ClosedRange<Float> = 0.62...1,
+             edge: (P, P) = (P(x: 752, y: 653), P(x: 862, y: 676)), ink: SIMD4<Float> = SIMD4(0.24, 0.16, 0.13, 1)) -> Image {
     var o = a
-    func isPad(_ i: Int) -> Bool { let v = a.px[i]; return v.w > 0.95 && (v.x + v.y + v.z) / 3 > 0.62 }
+    func isPad(_ i: Int) -> Bool { a.px[i].w > 0.95 && pad.contains(luma(a.px[i])) }
     let idx = (0..<W * H).filter { m[$0] > 0 }
     let near = idx.map { i in [i - 1, i + 1, i - W, i + W].filter { m[$0] > 0 || isPad($0) } }
     var mean = SIMD4<Float>.zero, n: Float = 0
@@ -96,14 +104,13 @@ func inpaint(_ a: Image, _ m: [Float]) -> Image {
             o.px[i] += (t / Float(l.count) - o.px[i]) * 1.5
         }
     }
-    // 被鼠标和爪子挡住的桌垫上沿
-    let a0 = P(x: 752, y: 653), a1 = P(x: 862, y: 676)
+    let (a0, a1) = edge
     let line = mask([a0, a1, P(x: a1.x, y: a1.y + 3.5), P(x: a0.x, y: a0.y + 3.5)], blur: 1, smooth: false)
     for i in idx {
         let x = CGFloat(i % W), y = CGFloat(i / W)
         if y < a0.y + (x - a0.x) * (a1.y - a0.y) / (a1.x - a0.x) { o.px[i] = .zero }
     }
-    for i in 0..<W * H where line[i] > 0 { o.px[i] = o.px[i] * (1 - line[i]) + SIMD4(0.24, 0.16, 0.13, 1) * line[i] }
+    for i in 0..<W * H where line[i] > 0 { o.px[i] = o.px[i] * (1 - line[i]) + ink * line[i] }
     return o
 }
 
@@ -130,8 +137,8 @@ let armR = pts([742,508, 725,533, 700,544, 672,552, 649,559, 620,575, 590,600, 5
 let mouse = pts([689,742, 691,725, 701,706, 724,679, 749,663, 775,656, 800,656, 823,661, 838,676, 844,695, 841,713, 828,731, 806,751, 781,768, 756,777, 730,777, 706,770, 694,758])
 let mouseHole = pts([688,745, 690,725, 701,706, 723,678, 748,660, 775,653, 802,652, 828,656, 848,670, 858,692, 856,716, 842,738, 818,760, 788,778, 758,787, 728,786, 702,778, 688,762])
 
-// 桌垫向右延展，给鼠标留出活动空间
-let extend = P(x: 84, y: 20)
+// 桌垫向右延展，给鼠标留出活动空间；皮肤的鼠标更宽，多留一些
+let extend = skin == nil ? P(x: 84, y: 20) : P(x: 108, y: 26)
 func widenPad(_ a: Image) -> Image {
     let s0 = P(x: 858, y: 655), s1 = P(x: 690, y: 862)  // 接缝
     func side(_ p: P) -> CGFloat { (s1.x - s0.x) * (p.y - s0.y) - (s1.y - s0.y) * (p.x - s0.x) }  // <0 在右
@@ -194,8 +201,105 @@ func tailless(_ a: Image) -> Image {
     for y in 280..<690 { for x in 780..<1060 where inTail(x, y) { o[x, y] = .zero } }
     return o
 }
-write(tailless(base(idle)).cg, "plate")
-write(tailless(widenPad(inpaint(trim(cover), hole))).cg, "plate_cover")
+var plate = tailless(base(idle)), plateCover = tailless(widenPad(inpaint(trim(cover), hole)))
+var asleep = cut(sleep, mask(pts([420,240, 560,220, 700,240, 730,330, 690,430, 560,446, 440,420, 412,330]), blur: 4))
+var mouseImage = cut(cover, mask(mouse)).cg.cropping(to: CGRect(x: 680, y: 648, width: 176, height: 136))!
+
+// 皮肤：猫身与原素材逐像素对齐，所以只换耳机和桌面
+if let skin {
+    /// 从透明处和 `seeds` 向内清掉残留的浅色背景，边缘按深色描边重算透明度。
+    func knock(_ a: Image, seeds: [P] = []) -> Image {
+        let paper: Float = 0.8, limit: Float = 0.5
+        var out = a.px.map { $0.w < 0.5 }, queue = (0..<W * H).filter { out[$0] }
+        for s in seeds { out[Int(s.y) * W + Int(s.x)] = true; queue.append(Int(s.y) * W + Int(s.x)) }
+        while let i = queue.popLast() {
+            let x = i % W
+            for j in [x > 0 ? i - 1 : i, x < W - 1 ? i + 1 : i, max(i - W, 0), min(i + W, W * H - 1)] where !out[j] && luma(a.px[j]) > limit {
+                out[j] = true
+                queue.append(j)
+            }
+        }
+        var seen = out  // 孤立的小碎点也算背景
+        for start in 0..<W * H where !seen[start] {
+            var island = [start], k = 0
+            seen[start] = true
+            while k < island.count {
+                let i = island[k]
+                k += 1
+                for j in [i - 1, i + 1, i - W, i + W] where j >= 0 && j < W * H && !seen[j] {
+                    seen[j] = true
+                    island.append(j)
+                }
+            }
+            if island.count < 400 { island.forEach { out[$0] = true } }
+        }
+        var o = a
+        for y in 1..<H - 1 { for x in 1..<W - 1 {
+            let i = y * W + x
+            if out[i], out[i - 1], out[i + 1], out[i - W], out[i + W] { o.px[i] = .zero; continue }
+            let near = [i - 1, i + 1, i - W, i + W, i - W - 1, i - W + 1, i + W - 1, i + W + 1]
+            let rim = out[i] ? near.contains { !out[$0] } : near.contains { out[$0] }
+            guard rim else { if out[i] { o.px[i] = .zero }; continue }
+            let dark = (near + [i]).filter { a.px[$0].w > 0.5 }.map { a.px[$0] }.min { luma($0) < luma($1) } ?? .zero
+            let alpha = a.px[i].w < 0.5 ? 0 : max(0, min(1, (paper - luma(a.px[i])) / max(paper - luma(dark), 0.1)))
+            o.px[i] = dark * alpha
+        } }
+        return o
+    }
+    let holes = [P(x: 560, y: 120), P(x: 752, y: 208)]  // 头梁下、右耳旁的空隙
+    let skinIdle = knock(Image(skin + "/idle.png"), seeds: holes), skinCover = knock(Image(skin + "/cover_eyes.png"), seeds: holes)
+
+    // 耳机：猫身之外垫在下面，右耳罩盖在上面；捂眼时左臂又在耳罩前
+    let rim: [Double] = [810,375, 820,354, 826,334, 829,312, 829,292, 826,278, 820,262, 812,250, 803,240, 797,228, 795,215, 774,222, 757,222, 742,227, 729,237, 718,252, 709,273, 703,297, 700,320]
+    let cup = mask(pts(rim + [701,345, 706,368, 714,385, 725,397, 740,403, 760,404, 780,400, 797,389]), blur: 1)
+    let cupCover = mask(pts(rim + [700,342, 718,357, 736,374.5, 752,392.5, 764,402, 780,400, 797,389]), blur: 1)
+    func wear(_ cat: Image, _ new: Image, _ cup: [Float]) -> Image {
+        var o = cat
+        for y in 0..<420 { for x in 360..<850 {
+            let i = y * W + x
+            o.px[i] = cat.px[i] + new.px[i] * (1 - cat.px[i].w)
+            o.px[i] = o.px[i] * (1 - cup[i]) + new.px[i] * cup[i]
+        } }
+        return o
+    }
+
+    // 桌面：猫身下缘以下整块换掉，两个姿势共用
+    let mouse = pts([685,752, 687,738, 695,722, 706,703, 716,694, 726,684, 742,672, 760,663, 780,659, 800,658, 815,662, 828,669, 838,678, 843,687, 849,702, 855,715, 859,725, 858,732, 850,741, 836,753, 822,762, 806,765, 790,764, 778,768, 765,776, 750,784, 738,787, 724,786, 708,780, 697,770, 688,762])
+    let hole = mask(pts([678,760, 680,736, 695,710, 713,688, 738,667, 762,657, 790,652, 818,655, 846,671, 858,692, 868,712, 869,722, 862,730, 848,742, 834,755, 820,768, 804,784, 776,796, 744,804, 714,804, 688,790]))
+    func onDesk(_ x: Int, _ y: Int) -> Bool { Double(y) > (x < 455 ? 579 + 0.16 * Double(x - 330) : 634 + 0.145 * Double(x - 660)) }
+    let empty = widenPad(inpaint(skinCover, hole, pad: 0.22...0.36, edge: (P(x: 740, y: 652), P(x: 870, y: 674)), ink: SIMD4(0.13, 0.11, 0.09, 1)))
+    func furnish(_ cat: Image) -> Image {
+        var o = cat
+        for y in 540..<H { for x in 0..<W {
+            if onDesk(x, y) { o[x, y] = empty[x, y]; continue }
+            if x < 455 { continue }
+            let t = Float(max(0, min(1, (Double(y) - 614 - 0.145 * Double(x - 660)) / 6)))  // 腹部下缘用 cover，没有浅色桌沿
+            o[x, y] = o[x, y] * (1 - t) + plateCover[x, y] * t
+        } }
+        return o
+    }
+    plate = furnish(wear(plate, skinIdle, cup))
+    plateCover = furnish(wear(plateCover, skinCover, cupCover))
+    asleep = cut(asleep, cup.map { 1 - $0 })
+    mouseImage = cut(skinCover, mask(mouse)).cg.cropping(to: CGRect(x: 684, y: 655, width: 176, height: 136))!
+}
+
+/// 手臂描边外残留的浅色细边，衬在深色桌面上会显出来：从 `top` 行往下向内削，碰到描边为止。
+func trimmed(_ a: Image, top: Int) -> Image {
+    guard skin != nil else { return a }
+    var o = a
+    for _ in 0..<4 {
+        let s = o
+        for y in top..<o.h { for x in 0..<o.w where s[x, y].w > 0 {
+            let v = s[x, y], open = [s[x - 1, y], s[x + 1, y], s[x, y - 1], s[x, y + 1]].contains { $0.w < 0.05 }
+            if open, v.w < 0.3 || luma(v) / v.w > 0.42 { o[x, y] = .zero }
+        } }
+    }
+    return o
+}
+
+write(plate.cg, "plate")
+write(plateCover.cg, "plate_cover")
 
 // 眯眼：把原画的眼睛沿竖向压扁，上眼皮压得多、内眼角略低，四周平滑过渡
 func squint(_ amount: CGFloat, tilt: CGFloat) -> Image {
@@ -221,8 +325,8 @@ var tail = Image()
 for y in 280..<690 { for x in 780..<1060 where inTail(x, y) { tail[x, y] = idle[x, y] } }
 for y in 606..<666 { for x in 878..<924 { tail[x, y] = tail[924 + (924 - x), y] } }
 write(tail.cg.cropping(to: CGRect(x: 860, y: 290, width: 240, height: 400))!, "tail")
-write(cut(sleep, mask(pts([420,240, 560,220, 700,240, 730,330, 690,430, 560,446, 440,420, 412,330]), blur: 4)).cg.cropping(to: CGRect(x: 400, y: 200, width: 360, height: 272))!, "face_sleep")
-write(cut(cover, mask(mouse)).cg.cropping(to: CGRect(x: 680, y: 648, width: 176, height: 136))!, "mouse")
+write(asleep.cg.cropping(to: CGRect(x: 400, y: 200, width: 360, height: 272))!, "face_sleep")
+write(mouseImage, "mouse")
 
 // 肩头：内收时叠在右臂根部之上，朝手臂一侧羽化
 var cap = cut(idle, mask(idleL, grow: 2))
@@ -240,7 +344,7 @@ func arm(_ f: Image, _ outline: [P], pivot: P, tip: P, fade: CGFloat, _ name: St
         let along = ((CGFloat(x) - pivot.x) * (tip.x - pivot.x) + (CGFloat(y) - pivot.y) * (tip.y - pivot.y)) / l
         o[x, y] *= Float(max(0, min(1, (along + fade) / (fade * 0.7))))
     } }
-    write(upright(o, pivot: pivot, tip: tip, size: CGSize(width: 240, height: 400), pivotAt: P(x: 120, y: 80)).cg, name)
+    write(trimmed(upright(o, pivot: pivot, tip: tip, size: CGSize(width: 240, height: 400), pivotAt: P(x: 120, y: 80)), top: 150).cg, name)
     print(name, "length", l)
 }
 
@@ -271,13 +375,13 @@ do {
             o[x, y] = src.sample(P(x: p.x + v.y * n, y: p.y - v.x * n)) * Float(min(1, CGFloat(y) / 20))
         }
     }
-    write(o.cg, "arm_right")
+    write(trimmed(o, top: 80).cg, "arm_right")
     // 内收版：修掉腋下，内侧与胸毛羽化衔接
     for y in 0..<o.h - 74 { for x in 0..<o.w {
         let limit = 104 + max(0, Float(y) - Float(o.h - 100)) * 0.15
         o[x, y] *= max(0, min(1, (limit - Float(x)) / 14))
     } }
-    write(o.cg, "arm_right_in")
+    write(trimmed(o, top: 80).cg, "arm_right_in")
     print("arm_right length", o.h)
 }
 arm(typing, armR, pivot: P(x: 815, y: 572), tip: P(x: 610, y: 682), fade: 50, "arm_left")

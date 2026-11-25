@@ -5,7 +5,7 @@ cd "${0:A:h}"
 rm -rf InkCat.app
 mkdir -p InkCat.app/Contents/{MacOS,Resources}
 cp Info.plist InkCat.app/Contents/
-cp Assets/*.png InkCat.app/Contents/Resources/
+cp -R Assets/*.png Assets/gamer InkCat.app/Contents/Resources/
 rm InkCat.app/Contents/Resources/icon.png
 
 iconset=$(mktemp -d)/AppIcon.iconset

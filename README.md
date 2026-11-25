@@ -12,9 +12,12 @@
 - **鼠标**：跟手移动，左右键和滚轮都有反应
 - **神态**：眨眼、甩尾、打盹；打得快会眯眼、冒汗、微微抖动
 - **输密码**：系统开启密码保护（安全输入）时捂眼，不显示任何按键
+- **外观**：原版和电竞（耳机、黑键盘）两套，随时切换
 - **隐私模式**（默认开启）：只跟着敲击节奏动，不读取按键，也不需要权限
 
-右键猫或点菜单栏图标可以调大小、锁定位置、切换隐私模式。「设置与演示」里可以逐个预览和开关动作。
+右键猫或点菜单栏图标可以调大小、锁定位置、切换隐私模式。「设置与演示」里可以换外观，也可以逐个预览和开关动作。
+
+![电竞外观](docs/gamer.png)
 
 ## 安装
 
@@ -75,6 +78,7 @@ open InkCat.app
 | `Sources/InputMonitor.swift` | 读取按键和鼠标（只读） |
 | `Sources/KeyCounter.swift` | 隐私模式：只数系统累计的按键次数 |
 | `Sources/CatView.swift` | 猫的图层和动作 |
+| `Sources/Skin.swift` | 外观：皮肤素材和对应的鼠标亮区 |
 | `Sources/Keyboard.swift` | 键位、指法和透视坐标 |
 | `Sources/Settings.swift`、`Demo.swift` | 设置窗口与动作演示 |
 | `art/cut.swift` | 把 `art/frames/` 的整帧图拆成 `Assets/` 里的活动部件 |
@@ -82,7 +86,8 @@ open InkCat.app
 重新拆图：
 
 ```bash
-swift art/cut.swift art/frames Assets
+swift -O art/cut.swift art/frames Assets
+swift -O art/cut.swift art/frames Assets/gamer art/skins/gamer
 ```
 
 想换成自己的猫，见[换素材说明](docs/CUSTOM_ART.md)。
@@ -96,6 +101,6 @@ swift art/cut.swift art/frames Assets
 ## 许可证
 
 - 代码：[MIT](LICENSE)
-- 图片（`Assets/`、`art/frames/`、`docs/`）：[保留所有权利](LICENSE-ART.md)，只允许为编译和个人运行墨团而使用
+- 图片（`Assets/`、`art/`、`docs/`）：[保留所有权利](LICENSE-ART.md)，只允许为编译和个人运行墨团而使用
 
 *Code is MIT. Images are all rights reserved and not covered by MIT.*
