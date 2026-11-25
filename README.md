@@ -72,6 +72,8 @@ open InkCat.app
 swift art/cut.swift art/frames Assets
 ```
 
+想换成自己的猫，见[换素材说明](docs/CUSTOM_ART.md)。
+
 ## 关于
 
 个人 vibe coding 项目：代码由 Claude Code 编写，原画由 Gemini 生成，部分动作参考了 Gemini 做的另一版，我负责提想法和挑毛病。
