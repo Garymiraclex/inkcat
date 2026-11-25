@@ -243,6 +243,7 @@ namespace InkCat
             SetCursorPos(x, y);
             Wait(0.3);
             mouse_event(2, 0, 0, 0, IntPtr.Zero);
+            Wait(0.1);
             for (int i = 1; i <= 10; i++) { SetCursorPos(x - 12 * i, y - 5 * i); Wait(0.03); }
             mouse_event(4, 0, 0, 0, IntPtr.Zero);
             Wait(0.5);
@@ -324,6 +325,23 @@ namespace InkCat
             Check(click > 100, $"右键有反应（变化 {click} 点）");
             Press(0x01, true); Press(0x01, false);  // 收起可能弹出的右键菜单
             Wait(0.5);
+
+            // 隐私模式下只动鼠标：不能误当成打字（猫的右爪和键盘那一块不动）
+            var paw = new Native.RECT { Left = r.Left + 70, Top = r.Top + 95, Right = r.Left + 150, Bottom = r.Top + 185 };
+            SetCursorPos(400, 330);
+            Wait(1.5);
+            var quiet = Screen("live_mouse_before");
+            int wrong = 0;
+            for (int i = 0; i < 24; i++)
+            {
+                SetCursorPos(300 + 8 * i, 300 + 5 * (i % 7));
+                mouse_event(1, 2, 1, 0, IntPtr.Zero);
+                if (i % 6 == 0) mouse_event(0x800, 0, 0, 120, IntPtr.Zero);
+                if (i % 6 == 3) { mouse_event(0x20, 0, 0, 0, IntPtr.Zero); mouse_event(0x40, 0, 0, 0, IntPtr.Zero); }
+                Wait(0.1);
+                if (Difference(quiet, Screen("live_mouse"), paw) > 100) wrong++;
+            }
+            Check(wrong == 0, $"只动鼠标不会误当成打字（24 次里误判 {wrong} 次）");
 
             // 关闭隐私模式：设置每 0.3 秒核对一次
             Prefs.Set("privacy", false);
