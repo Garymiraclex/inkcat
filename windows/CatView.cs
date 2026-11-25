@@ -174,6 +174,7 @@ namespace InkCat
             right.Reach(rightRest, 0);
             mouser.Reach(MousePaw, 0);
             ShowLeftArm();
+            Dress();
         }
 
         /// <summary>换上当前皮肤的图。</summary>
