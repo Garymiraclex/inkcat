@@ -1,5 +1,6 @@
 // 把整帧图拆成活动层：swift cut.swift <frames 目录> <输出目录>。坐标为 1200×896 像素，左上原点。
-// 加第三个参数 <皮肤目录> 则只生成皮肤：猫取自 frames，耳机、键盘、鼠标、桌垫取自皮肤目录。
+// 加第三个参数 <皮肤目录> 则只生成皮肤：猫取自 frames，键盘、鼠标、桌垫取自皮肤的 cover_eyes.png；
+// 耳机取自皮肤的 idle.png 和 cover_eyes.png，没有 idle.png 就不换耳机。
 import AppKit
 
 typealias P = CGPoint
@@ -247,7 +248,8 @@ if let skin {
         return o
     }
     let holes = [P(x: 560, y: 120), P(x: 752, y: 208)]  // 头梁下、右耳旁的空隙
-    let skinIdle = knock(Image(skin + "/idle.png"), seeds: holes), skinCover = knock(Image(skin + "/cover_eyes.png"), seeds: holes)
+    let headset = FileManager.default.fileExists(atPath: skin + "/idle.png")
+    let skinCover = knock(Image(skin + "/cover_eyes.png"), seeds: headset ? holes : [])
 
     // 耳机：猫身之外垫在下面，右耳罩盖在上面；捂眼时左臂又在耳罩前
     let rim: [Double] = [810,375, 820,354, 826,334, 829,312, 829,292, 826,278, 820,262, 812,250, 803,240, 797,228, 795,215, 774,222, 757,222, 742,227, 729,237, 718,252, 709,273, 703,297, 700,320]
@@ -267,7 +269,8 @@ if let skin {
     let mouse = pts([685,752, 687,738, 695,722, 706,703, 716,694, 726,684, 742,672, 760,663, 780,659, 800,658, 815,662, 828,669, 838,678, 843,687, 849,702, 855,715, 859,725, 858,732, 850,741, 836,753, 822,762, 806,765, 790,764, 778,768, 765,776, 750,784, 738,787, 724,786, 708,780, 697,770, 688,762])
     let hole = mask(pts([678,760, 680,736, 695,710, 713,688, 738,667, 762,657, 790,652, 818,655, 846,671, 858,692, 868,712, 869,722, 862,730, 848,742, 834,755, 820,768, 804,784, 776,796, 744,804, 714,804, 688,790]))
     func onDesk(_ x: Int, _ y: Int) -> Bool { Double(y) > (x < 455 ? 579 + 0.16 * Double(x - 330) : 634 + 0.145 * Double(x - 660)) }
-    let empty = widenPad(inpaint(skinCover, hole, pad: 0.22...0.36, edge: (P(x: 740, y: 652), P(x: 870, y: 674)), ink: SIMD4(0.13, 0.11, 0.09, 1)))
+    let light = luma(skinCover[640, 815]) > 0.5  // 桌垫是浅色还是深色
+    let empty = widenPad(inpaint(skinCover, hole, pad: light ? 0.62...1 : 0.22...0.36, edge: (P(x: 740, y: 652), P(x: 870, y: 674)), ink: SIMD4(0.13, 0.11, 0.09, 1)))
     func furnish(_ cat: Image) -> Image {
         var o = cat
         for y in 540..<H { for x in 0..<W {
@@ -278,9 +281,13 @@ if let skin {
         } }
         return o
     }
-    plate = furnish(wear(plate, skinIdle, cup))
-    plateCover = furnish(wear(plateCover, skinCover, cupCover))
-    asleep = cut(asleep, cup.map { 1 - $0 })
+    if headset {
+        plate = wear(plate, knock(Image(skin + "/idle.png"), seeds: holes), cup)
+        plateCover = wear(plateCover, skinCover, cupCover)
+        asleep = cut(asleep, cup.map { 1 - $0 })
+    }
+    plate = furnish(plate)
+    plateCover = furnish(plateCover)
     mouseImage = cut(skinCover, mask(mouse)).cg.cropping(to: CGRect(x: 684, y: 655, width: 176, height: 136))!
 }
 

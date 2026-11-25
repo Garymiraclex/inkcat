@@ -90,7 +90,7 @@ swift -O art/cut.swift art/frames Assets
 swift -O art/cut.swift art/frames Assets/gamer art/skins/gamer
 ```
 
-想换成自己的猫，见[换素材说明](docs/CUSTOM_ART.md)。
+想换成自己的键盘、鼠标、耳机或猫：图要怎么画、给生图 AI 的提示词见[素材要求](docs/ART_BRIEF.md)，怎么装进程序见[换素材说明](docs/CUSTOM_ART.md)。
 
 ## 关于
 
@@ -101,6 +101,6 @@ swift -O art/cut.swift art/frames Assets/gamer art/skins/gamer
 ## 许可证
 
 - 代码：[MIT](LICENSE)
-- 图片（`Assets/`、`art/`、`docs/`）：[保留所有权利](LICENSE-ART.md)，只允许为编译和个人运行墨团而使用
+- 图片（`Assets/`、`art/`、`docs/`）：[可以修改，可以非商用分享，要署名](LICENSE-ART.md)
 
-*Code is MIT. Images are all rights reserved and not covered by MIT.*
+*Code is MIT. Images are not covered by MIT: you may modify them and share your versions non-commercially with attribution.*

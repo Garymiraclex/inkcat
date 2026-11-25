@@ -1,14 +1,15 @@
-# 换成自己的猫
+# 换成自己的素材
 
-代码是 MIT，可以换上自己的素材，改完再发布。仓库里的猫图[保留所有权利](../LICENSE-ART.md)：可以照着尺寸和位置对位，但不要描摹或修改它们再发布。
+图要画成什么样、给生图 AI 的提示词，见[素材要求](ART_BRIEF.md)。这里写怎么装进程序、改哪里的代码。
 
-发布前请清掉 `Assets/`（含 `Assets/gamer/`）、`art/frames/`、`art/skins/`、`docs/` 里所有原图，包括 `status.png` 和 README 预览图。
+代码是 MIT。仓库里的图可以改，也可以非商用地分享，要署名，见[图片授权](../LICENSE-ART.md)。要商用，就清掉 `Assets/`（含 `Assets/gamer/`）、`art/frames/`、`art/skins/`、`docs/` 里所有原图，换成自己画的，包括 `status.png` 和 README 预览图。
 
 ## 选哪种做法
 
 | 做法 | 工作量 | 适合 |
 |---|---|---|
-| A. 画 4 张整帧图，用脚本拆 | 小 | 体型、姿势和现在几乎一样 |
+| 皮肤：改 1–2 张图，用脚本拆 | 最小 | 猫不变，只换键盘、鼠标、桌垫、耳机 |
+| A. 画 4 张整帧图，用脚本拆 | 小 | 换猫，体型、姿势和现在几乎一样 |
 | B. 直接画 14 张部件 | 中 | 体型或花纹不同，但坐姿、键盘位置不变 |
 | C. 换构图 | 大 | 坐姿或键盘位置不同，要改代码里的坐标 |
 
@@ -69,15 +70,30 @@ swift -O art/cut.swift art/frames Assets
 
 ## 只换外设（皮肤）
 
-猫不变，只换耳机、键盘、鼠标、桌垫，参照 `art/skins/gamer/`：以 `idle.png`、`cover_eyes.png` 为底图改图，机位、键位和猫逐像素对齐。
+猫不变，只换键盘、鼠标、桌垫，或者再加耳机。最省事的是直接替换电竞皮肤：
 
-```bash
-swift -O art/cut.swift art/frames Assets/gamer art/skins/gamer
-```
+1. 按[素材要求](ART_BRIEF.md)改图，替换 `art/skins/gamer/` 里的同名文件。不要耳机就删掉那里的 `idle.png`。
+2. 生成素材并编译：
 
-皮肤目录里没有的图沿用 `Assets/`。耳罩、鼠标的轮廓和桌垫颜色写在 `art/cut.swift` 的 `if let skin` 一段，鼠标亮区在 `Sources/Skin.swift`。新增一套皮肤还要在 `Skin` 里加一项，并在 `build.sh` 里复制它的目录。
+   ```bash
+   swift -O art/cut.swift art/frames Assets/gamer art/skins/gamer
+   ./build.sh && open InkCat.app
+   ```
 
-不要电竞皮肤：删掉 `Assets/gamer`，去掉 `build.sh` 里的 `Assets/gamer` 和 `Skin` 中的 `gamer`。
+3. 在「设置与演示 → 外观」里选电竞，逐个演示看一遍。想改名字，改 `Sources/Skin.swift` 的 `title`。
+
+想另加一套：新建 `art/skins/<名字>/` 和 `Assets/<名字>/`，在 `Skin` 里加一项，补上 `title` 和 `mouseParts`，并在 `build.sh` 复制 `Assets/gamer` 的那一行加上新目录。某套皮肤里没有的图，会沿用 `Assets/` 里的原版。
+
+外形和电竞皮肤不同时，要改：
+
+| 变了什么 | 改哪里 |
+|---|---|
+| 鼠标轮廓 | `art/cut.swift` 里 `if let skin` 一段的 `mouse`（外沿）和 `hole`（外沿再放大几像素，盖住阴影） |
+| 鼠标左右键、滚轮的亮区 | `Sources/Skin.swift` 的 `mouseParts`，以 (684, 655) 为原点 |
+| 画面右侧的耳罩轮廓 | 同一段的 `rim`、`cup`、`cupCover` |
+| 头梁与头之间的空隙 | 同一段的 `holes`，每个空隙里取一个点 |
+
+也可以不用脚本，直接照[部件清单](#b-部件清单)画好，放进 `Assets/gamer/`。
 
 ## 换毛色和画风时要改的代码
 
