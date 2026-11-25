@@ -38,19 +38,24 @@ enum Keyboard {
     ]
 
     /// 画中 65% 键盘各排的两端；它没有 F 区，与数字排共用一排。
-    private static let ends: [(CGPoint, CGPoint)] = [
-        (Scene.at(600, 722), Scene.at(195, 650)),
-        (Scene.at(600, 722), Scene.at(195, 650)),
-        (Scene.at(628, 702), Scene.at(222, 634)),
-        (Scene.at(652, 682), Scene.at(248, 619)),
-        (Scene.at(672, 667), Scene.at(270, 604)),
-        (Scene.at(692, 655), Scene.at(297, 592)),
+    static let classicRows: [[CGPoint]] = [
+        [Scene.at(600, 722), Scene.at(195, 650)],
+        [Scene.at(600, 722), Scene.at(195, 650)],
+        [Scene.at(628, 702), Scene.at(222, 634)],
+        [Scene.at(652, 682), Scene.at(248, 619)],
+        [Scene.at(672, 667), Scene.at(270, 604)],
+        [Scene.at(692, 655), Scene.at(297, 592)],
     ]
 
-    static let keys: [UInt16: Key] = {
+    /// 当前键盘各排的两端；换键盘时更新。
+    static var ends = classicRows { didSet { if ends != oldValue { keys = layout() } } }
+
+    private(set) static var keys = layout()
+
+    private static func layout() -> [UInt16: Key] {
         var result: [UInt16: Key] = [:]
-        for (row, (a, b)) in zip(rows, ends) {
-            let unit = CGVector(dx: (b.x - a.x) / 15, dy: (b.y - a.y) / 15)
+        for (row, end) in zip(rows, ends) {
+            let a = end[0], b = end[1], unit = CGVector(dx: (b.x - a.x) / 15, dy: (b.y - a.y) / 15)
             var u: CGFloat = 0
             for item in row.split(separator: " ") {
                 let f = item.split(separator: ":")
@@ -64,7 +69,7 @@ enum Keyboard {
             }
         }
         return result
-    }()
+    }
 
     /// 小键盘与右 Control 映射到主键区。
     private static let aliases: [UInt16: UInt16] = [

@@ -7,6 +7,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
 
+    private var dressed = false
+
     private var scale: CGFloat {
         get { CGFloat(defaults.object(forKey: "scale") as? Double ?? 1) }
         set { defaults.set(Double(newValue), forKey: "scale") }
@@ -42,7 +44,16 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             savePosition()
         }
         place(defaults.string(forKey: "origin").map(NSPointFromString))
-        show()
+
+        Wardrobe.shared.onChange.append { [unowned self] look in
+            Keyboard.ends = look.rows
+            cat.look = look
+            if !dressed {  // 换好装才第一次露面
+                dressed = true
+                show()
+            }
+        }
+        Wardrobe.shared.start()
 
         let timer = Timer(timeInterval: 0.3, repeats: true) { [unowned self] _ in
             syncListening()
@@ -150,7 +161,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(quit)
     }
 
-    private lazy var settings = SettingsWindow(onPrivacyChange: { [unowned self] in applyPrivacy() }, onSkinChange: { [cat] in cat.skin = $0 })
+    private lazy var settings = SettingsWindow(onPrivacyChange: { [unowned self] in applyPrivacy() })
     @objc private func openPanel() { settings.show() }
 
     @objc private func openSettings() {
