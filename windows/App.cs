@@ -17,7 +17,7 @@ namespace InkCat
         CatWindow window;
         KeyCounter counter;
         SettingsWindow settings;
-        bool away;
+        bool away, dressed;
 
         CatView Cat => window.Cat;
 
@@ -60,7 +60,14 @@ namespace InkCat
             SystemEvents.SessionSwitch += OnSessionSwitch;
             SystemEvents.DisplaySettingsChanged += (s, a) => Dispatcher.BeginInvoke(new Action(window.KeepOnScreen));
 
-            Visible = true;
+            Wardrobe.Shared.Dressed += look =>
+            {
+                Cat.Look = look;
+                if (dressed) return;
+                dressed = true;  // 换好装才第一次露面
+                Visible = true;
+            };
+            Wardrobe.Shared.Start();
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(0.3) };
             timer.Tick += (s, a) =>
             {
@@ -160,7 +167,7 @@ namespace InkCat
         {
             if (settings == null)
             {
-                settings = new SettingsWindow(SetPrivacy, skin => Cat.Skin = skin);
+                settings = new SettingsWindow(SetPrivacy);
                 settings.Closed += (s, e) => settings = null;
             }
             settings.Show();

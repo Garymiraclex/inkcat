@@ -16,7 +16,7 @@ namespace InkCat
 
         protected Limb() => RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.Linear);
 
-        public abstract void Dress(Skin skin, double detail);
+        public abstract void Dress(Look look, double detail);
         protected abstract void Draw(DrawingContext dc, double[] pose);
 
         double[] Pose()
@@ -62,9 +62,9 @@ namespace InkCat
             (upper, lower) = (root + length * 0.2, root + length * 0.6);
         }
 
-        public override void Dress(Skin skin, double detail)
+        public override void Dress(Look look, double detail)
         {
-            var image = skin.Image(asset, detail);
+            var image = look.Image(asset, detail);
             top = Band(image, 0, upper / height);
             middle = Band(image, upper / height, lower / height);
             bottom = Band(image, lower / height, 1);
@@ -98,7 +98,7 @@ namespace InkCat
         readonly string asset;
         readonly Brush[][] bands = new Brush[2][];  // 外展、内收
         ImageSource shoulder;  // 内收时盖住根部的肩头
-        bool tucked;
+        bool tucked, covered;
 
         public BendyArm(string asset)
         {
@@ -110,12 +110,13 @@ namespace InkCat
         static double Top(int i) => Math.Max(0, i - 0.5);
         static double Bottom(int i) => Math.Min(count, i + 1.5);
 
-        public override void Dress(Skin skin, double detail)
+        public override void Dress(Look look, double detail)
         {
-            shoulder = Skin.Load("shoulder", detail);
+            shoulder = look.Image("shoulder", detail);
+            covered = look.Joint.Length == 0;
             for (int k = 0; k < 2; k++)
             {
-                var image = skin.Image(k == 0 ? asset : asset + "_in", detail);
+                var image = look.Image(k == 0 ? asset : asset + "_in", detail);
                 bands[k] = Enumerable.Range(0, count).Select(i => Band(image, Top(i) / count, Bottom(i) / count)).ToArray();
             }
             InvalidateVisual();
@@ -184,7 +185,7 @@ namespace InkCat
                 dc.Pop();
                 dc.Pop();
             }
-            dc.PushOpacity(pose[count * fields]);
+            dc.PushOpacity(covered ? 1 : pose[count * fields]);
             dc.DrawImage(shoulder, new Rect(396, 440, 120, 120));
         }
     }

@@ -9,7 +9,7 @@
     <RootNamespace>InkCat</RootNamespace>
     <AssemblyTitle>墨团</AssemblyTitle>
     <Product>InkCat</Product>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Prefer32Bit>false</Prefer32Bit>
@@ -23,7 +23,11 @@
     <Compile Include="*.cs" />
     <Reference Include="UIAutomationClient" />
     <Reference Include="UIAutomationTypes" />
-    <Resource Include="..\Assets\**\*.png" Exclude="..\Assets\icon.png;..\Assets\status.png" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Reference Include="System.Numerics" />
+    <Reference Include="System.Web.Extensions" />
+    <Resource Include="..\Assets\**\*.png;..\Assets\**\skin.json" Exclude="..\Assets\icon.png;..\Assets\status.png" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Resource Include="..\art\frames\idle.png;..\art\frames\type_both.png;..\art\frames\sleep.png;..\art\frames\cover_eyes.png" Link="Assets\packs\classic\%(Filename)%(Extension)" />
+    <Resource Include="..\docs\素材说明.txt" Link="Assets\guide.txt" />
     <Resource Include="icon.ico" />
     <InternalsVisibleTo Include="InkCat.Test" />
   </ItemGroup>

@@ -28,7 +28,10 @@ namespace InkCat
             new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             Section("键位", Keys);
             Section("节奏", Rhythms);
+            Section("拆猫", Cooking);
+            Section("坏素材", Broken);
             Section("姿势", Poses);
+            Section("即时更换", Swapping);
             Section("设置窗口", Settings);
             Section("真机", () => Live(args[1]));
             Console.WriteLine(failures == 0 ? "全部通过" : $"{failures} 项失败");
@@ -74,6 +77,177 @@ namespace InkCat
             Check(Count(hold) <= 6, $"长按 3 秒 → {Count(hold)} 下");
         }
 
+        // ———— 换装 ————
+
+        static Composer.Result Compose(params (string slot, string pack)[] wear)
+        {
+            var packs = Library.Scan();
+            var classic = packs.First(p => p.Id == Pack.Classic);
+            var outfit = Slots.All.Where(s => !s.IsOptional()).ToDictionary(s => s, s => new Choice { Pack = classic });
+            foreach (var (slot, id) in wear)
+            {
+                var s = Slots.All.First(x => x.Id() == slot);
+                var pack = packs.First(p => p.Id == id);
+                outfit[s] = new Choice { Pack = pack, Place = pack.Config.place != null && pack.Config.place.TryGetValue(slot, out var place) ? place.Clamped() : new Place() };
+            }
+            return new Composer().Compose(outfit, classic);
+        }
+
+        static string NewPack(string name)
+        {
+            string path = Path.Combine(Library.Folder, name);
+            if (Directory.Exists(path)) Directory.Delete(path, true);
+            Directory.CreateDirectory(path);
+            return path;
+        }
+
+        static void Frames(string path, Func<string, string> pick)
+        {
+            foreach (string f in Slot.Cat.Files()) File.WriteAllBytes(Path.Combine(path, f + ".png"), Art.Read($"packs/classic/{pick(f)}.png"));
+        }
+
+        static void Picture(string path, int w, int h, Action<Graphics> draw)
+        {
+            using (var b = new Bitmap(w, h))
+            {
+                using (var g = Graphics.FromImage(b)) { g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; draw(g); }
+                b.Save(path);
+            }
+        }
+
+        /// <summary>两种画法各拆一遍，结果存下来和 Mac 版对比。</summary>
+        static void Cooking()
+        {
+            Library.Prepare();
+            Check(File.Exists(Path.Combine(Library.Folder, "素材说明.txt")) && Directory.GetFiles(Path.Combine(Library.Folder, "_模板", "原版")).Length == 8 && Directory.GetFiles(Path.Combine(Library.Folder, "_模板", "电竞")).Length == 6, "素材文件夹和模板");
+            Frames(NewPack("搭着"), f => f == "type_both" ? "idle" : f);
+            string kit = NewPack("配件");
+            Picture(Path.Combine(kit, "hat.png"), 2400, 1792, g =>  // 白底、双倍大小
+            {
+                g.Clear(System.Drawing.Color.White);
+                using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(60, 36, 24), 10))
+                {
+                    g.FillEllipse(System.Drawing.Brushes.Firebrick, 920, 90, 440, 440);
+                    g.DrawEllipse(pen, 920, 90, 440, 440);
+                }
+            });
+            File.WriteAllBytes(Path.Combine(kit, "mouse.png"), Art.Read("packs/classic/mouse.png"));
+            File.WriteAllText(Path.Combine(kit, "skin.json"), "{\"name\":\"测试配件\",\"place\":{\"mouse\":{\"scale\":1.2,\"angle\":8}},\"cat\":{\"scarf\":true}}");
+            foreach (var (name, pack) in new[] { ("typing", Pack.Classic), ("resting", "user/搭着") })
+            {
+                var p = Library.Scan().First(x => x.Id == pack);
+                var f = Slot.Cat.Files().Select(p.Image).ToArray();
+                var watch = Stopwatch.StartNew();
+                var cat = Composer.Cut(new Cutter.Cat(f[0], f[1], f[3], f[2]));
+                Console.WriteLine($"       {name} 拆图 {watch.Elapsed.TotalSeconds:0.0}s");
+                Directory.CreateDirectory(Path.Combine(output, "cook_" + name));
+                foreach (var i in cat.Images) Save(i.Value.Image, $"cook_{name}/{i.Key}");
+                Check(cat.Images.Count == 12 && cat.Joint.Length == (name == "typing" ? 2 : 0), $"{name} 12 个部件");
+            }
+            var r = Compose(("keyboard", "gamer"), ("pad", "gamer"), ("mouse", "gamer"), ("headset", "gamer"));
+            Check(r.Problems.Count == 0 && r.Look.Images.Count == 15, "电竞合成");
+            Directory.CreateDirectory(Path.Combine(output, "cook_gamer"));
+            foreach (var i in r.Look.Images) Save(i.Value, "cook_gamer/" + i.Key);
+            var again = Stopwatch.StartNew();
+            Compose(("keyboard", "gamer"));
+            Console.WriteLine($"       有缓存时合成 {again.Elapsed.TotalSeconds:0.0}s");
+            Check(Compose().Look.Images.Count == 0, "全部原版时不合成");
+            Check(Library.Scan().First(x => x.Id == "user/配件").Title == "测试配件", "读取 skin.json");
+        }
+
+        static void Broken()
+        {
+            void Expect(string slot, string what, string expected, Action<string> make, bool warning = false)
+            {
+                string name = "坏_" + what;
+                string path = NewPack(name);
+                make(path);
+                try
+                {
+                    var pack = Library.Scan().First(p => p.Id == "user/" + name);
+                    string text = pack.Problem;
+                    if (pack.Slots.Any(s => s.Id() == slot))
+                    {
+                        var r = Compose((slot, "user/" + name));
+                        text = (warning ? r.Warnings : r.Problems).Values.FirstOrDefault() ?? text;
+                    }
+                    Check((text ?? "").Contains(expected), $"{what}：{text ?? "没有提示"}");
+                }
+                finally { Directory.Delete(path, true); }
+            }
+            byte[] mouse = Art.Read("packs/classic/mouse.png");
+            Expect("hat", "尺寸", "1024×768", p => Picture(p + "/hat.png", 1024, 768, g => { }));
+            Expect("cat", "缺帧", "还缺", p => Picture(p + "/idle.png", 1200, 896, g => { }));
+            Expect("hat", "棋盘", "背景不是透明", p => Picture(p + "/hat.png", 1200, 896, g => { for (int i = 0; i < 2700; i++) g.FillRectangle(i % 2 == i / 60 % 2 ? System.Drawing.Brushes.White : System.Drawing.Brushes.LightGray, i % 60 * 20, i / 60 * 20, 20, 20); }));
+            Expect("hat", "损坏", "打不开", p => File.WriteAllBytes(p + "/hat.png", new byte[500]));
+            Expect("mouse", "空文件", "打不开", p => File.WriteAllBytes(p + "/mouse.png", new byte[0]));
+            Expect("mouse", "没写完", "不完整", p => File.WriteAllBytes(p + "/mouse.png", mouse.Take(mouse.Length / 2).ToArray()));
+            Expect("pad", "超大", "太大", p => File.WriteAllBytes(p + "/pad.png", new byte[21 << 20]));
+            Expect("mouse", "透明", "空的", p => Picture(p + "/mouse.png", 1200, 896, g => { }));
+            Expect("mouse", "移出", "画面外", p => { File.WriteAllBytes(p + "/mouse.png", mouse); File.WriteAllText(p + "/skin.json", "{\"place\":{\"mouse\":{\"x\":-99999,\"scale\":1e308}},\"buttons\":{\"left\":[[1,2],[3]]},\"cat\":{\"joint\":[\"zz\",\"1\"]}}"); });
+            Expect("mouse", "坏json", "看不懂", p => { File.WriteAllBytes(p + "/mouse.png", mouse); File.WriteAllText(p + "/skin.json", "{\"place\": [1,2"); });
+            Expect("mouse", "坏json2", "看不懂", p => { File.WriteAllBytes(p + "/mouse.png", mouse); File.WriteAllText(p + "/skin.json", "{\"place\":{\"mouse\":{\"x\":\"a\"}}}"); });
+            Expect("cat", "错位", "没有对齐", p =>
+            {
+                Frames(p, f => f);
+                using (var s = new Bitmap(new MemoryStream(Art.Read("packs/classic/sleep.png")))) Picture(p + "/sleep.png", 1200, 896, g => g.DrawImage(s, 25, 12, 1200, 896));
+            });
+            Expect("cat", "反向", "差得比较多", p =>
+            {
+                foreach (string f in Slot.Cat.Files())
+                    using (var s = new Bitmap(new MemoryStream(Art.Read($"packs/classic/{f}.png")))) { s.RotateFlip(RotateFlipType.RotateNoneFlipX); s.Save($"{p}/{f}.png"); }
+            }, warning: true);
+        }
+
+        static void Swapping()
+        {
+            var w = Wardrobe.Shared;
+            int dressed = 0;
+            w.Dressed += l => dressed++;
+            void Until(string what, Func<bool> ok)
+            {
+                var t = Stopwatch.StartNew();
+                while (!ok() && t.Elapsed.TotalSeconds < 10) Wait(0.05);
+                Check(ok(), $"{what}（{t.Elapsed.TotalSeconds:0.0}s）");
+            }
+            w.Start();
+            Until("首次换装", () => dressed > 0);
+            string path = NewPack("新猫");
+            Frames(path, f => f == "type_both" ? "idle" : f);
+            Until("放入后出现在列表", () => w.PacksFor(Slot.Cat).Any(p => p.Id == "user/新猫"));
+            w.Choose(Slot.Cat, "user/新猫");
+            Until("换猫", () => w.Look.Joint.Length == 0);
+            var first = w.Look.Images["plate"];
+            byte[] idle = File.ReadAllBytes(path + "/idle.png");
+            File.WriteAllBytes(path + "/idle.png", Art.Read("packs/classic/sleep.png"));
+            File.WriteAllBytes(path + "/type_both.png", Art.Read("packs/classic/sleep.png"));
+            Until("覆盖图片后自动更新", () => w.Look.Images["plate"] != first && !w.Busy);
+            var second = w.Look.Images["plate"];
+            File.WriteAllBytes(path + "/idle.png", new byte[100]);
+            Until("改坏后报错", () => w.Problems.ContainsKey(Slot.Cat));
+            Check(w.Look.Images.TryGetValue("plate", out var still) && still == second, "继续穿着上一次的：" + w.Problems[Slot.Cat]);
+            File.WriteAllBytes(path + "/idle.png", idle);
+            Until("改好后恢复", () => !w.Problems.ContainsKey(Slot.Cat) && !w.Busy);
+            Directory.Move(path, path + "2");
+            Until("改名后提示并用原版", () => w.Problems.ContainsKey(Slot.Cat) && w.Look.Joint.Length == 2);
+            Directory.Delete(path + "2", true);
+            w.Choose(Slot.Cat, Pack.Classic);
+            w.Choose(Slot.Mouse, "user/配件");
+            for (int i = 0; i < 30; i++) { var p = w.PlaceOf(Slot.Mouse); p.x = i; w.Move(Slot.Mouse, p); Wait(0.01); }
+            Until("连续拖动后停下来", () => !w.Busy && w.Look.Images.Count > 0);
+            string json = File.ReadAllText(Path.Combine(Library.Folder, "配件", "skin.json"));
+            Check(json.Contains("29") && json.Contains("测试配件") && json.Contains("scarf"), "位置写进 skin.json，别的内容保留");
+            Wait(1.5);
+            int before = dressed;
+            Wait(3);
+            Check(dressed == before, "静止时不重复合成");
+            w.WearAll(w.Packs.First(p => p.Id == "gamer"));
+            Until("整套换成电竞", () => !w.Busy && w.Choice(Slot.Headset) == "gamer" && w.Look.Images.Count == 15);
+            w.WearAll(w.Packs.First(p => p.Id == Pack.Classic));
+            Until("整套换回原版", () => !w.Busy && w.Look.Images.Count == 0);
+            Keyboard.Rows = Keyboard.ClassicRows;
+        }
+
         // ———— 离屏渲染 ————
 
         static void Shot(CatView cat, string name, int width = 600)
@@ -95,16 +269,17 @@ namespace InkCat
 
         static void Poses()
         {
-            foreach (var skin in Skin.All)
+            foreach (var (name0, look) in new[] { ("classic", new Look()), ("gamer", Compose(("keyboard", "gamer"), ("pad", "gamer"), ("mouse", "gamer"), ("headset", "gamer")).Look), ("mix", Compose(("cat", "user/搭着"), ("keyboard", "gamer"), ("headset", "gamer"), ("hat", "user/配件"), ("mouse", "user/配件")).Look) })
             {
-                var cat = new CatView(preview: true) { Skin = skin, ShowsBubbles = true, Width = 600, Height = 448 };
+                Keyboard.Rows = look.Rows;
+                var cat = new CatView(preview: true, look: look) { ShowsBubbles = true, Width = 600, Height = 448 };
                 var window = new Window { Content = cat, SizeToContent = SizeToContent.WidthAndHeight, WindowStyle = WindowStyle.None, ShowActivated = false };
                 window.Show();
                 void Pose(string name, Action act, double wait = 0.3)
                 {
                     act();
                     Wait(wait);
-                    Shot(cat, $"{skin.Id}_{name}");
+                    Shot(cat, $"{name0}_{name}");
                     cat.Settle();
                     Wait(0.9);
                 }
@@ -126,12 +301,13 @@ namespace InkCat
                 Pose("nap", () => { cat.SetNapping(true); cat.FloatZ(); }, 0.6);
                 window.Close();
             }
-            Check(Directory.GetFiles(output).Length >= 30, "30 张姿势图");
+            Keyboard.Rows = Keyboard.ClassicRows;
+            Check(Directory.GetFiles(output, "*_*.png").Length >= 45, "45 张姿势图");
         }
 
         static void Settings()
         {
-            var w = new SettingsWindow(on => true, s => { });
+            var w = new SettingsWindow(on => true);
             w.Show();
             Wait(0.5);
             var target = new RenderTargetBitmap((int)w.ActualWidth, (int)w.ActualHeight, 96, 96, PixelFormats.Pbgra32);

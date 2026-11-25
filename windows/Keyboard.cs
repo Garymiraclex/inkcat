@@ -39,15 +39,22 @@ namespace InkCat
         };
 
         /// <summary>画中 65% 键盘各排的两端；它没有 F 区，与数字排共用一排。</summary>
-        static readonly (Point, Point)[] ends =
+        public static readonly Point[][] ClassicRows = new[]
         {
-            (new Point(600, 722), new Point(195, 650)),
-            (new Point(600, 722), new Point(195, 650)),
-            (new Point(628, 702), new Point(222, 634)),
-            (new Point(652, 682), new Point(248, 619)),
-            (new Point(672, 667), new Point(270, 604)),
-            (new Point(692, 655), new Point(297, 592)),
-        };
+            "600,722 195,650", "600,722 195,650", "628,702 222,634", "652,682 248,619", "672,667 270,604", "692,655 297,592",
+        }.Select(Cutter.Points).ToArray();
+
+        static Point[][] ends = ClassicRows;
+
+        /// <summary>当前键盘各排的两端；换键盘时更新。</summary>
+        public static Point[][] Rows
+        {
+            set
+            {
+                ends = value;
+                Keys = Build();
+            }
+        }
 
         const int space = 0x39;
         static readonly int[] coral = { 0x01, 0x1C };
@@ -56,14 +63,14 @@ namespace InkCat
             0x0E, 0x0F, 0x3A, 0x2A, 0x36, 0x1D, 0x38, 0xE01D, 0xE038, 0xE05B, 0xE053, 0xE04F, 0xE048, 0xE04B, 0xE050, 0xE04D,
         };
 
-        public static readonly Dictionary<int, Key> Keys = Build();
+        public static Dictionary<int, Key> Keys { get; private set; } = Build();
 
         static Dictionary<int, Key> Build()
         {
             var result = new Dictionary<int, Key>();
             for (int row = 0; row < rows.Length; row++)
             {
-                var (a, b) = ends[row];
+                Point a = ends[row][0], b = ends[row][1];
                 var unit = (b - a) / 15;
                 double u = 0;
                 foreach (var f in rows[row].Split(' ').Select(item => item.Split(':')))

@@ -14,12 +14,12 @@ namespace InkCat
     {
         static readonly Brush faint = SystemColors.GrayTextBrush, warning = new SolidColorBrush(Color.FromRgb(0xC2, 0x5A, 0x10));
 
-        readonly CatView cat = new CatView(preview: true) { ShowsBubbles = true, Width = 390, Height = 291, ClipToBounds = true };
+        readonly CatView cat = new CatView(preview: true, look: Wardrobe.Shared.Look) { ShowsBubbles = true, Width = 390, Height = 291, ClipToBounds = true };
         readonly TextBlock caption = new TextBlock { Foreground = faint, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 10) };
         readonly Button stop = new Button { Content = "停止", Padding = new Thickness(12, 4, 12, 4) };
         readonly Dictionary<string, List<CheckBox>> switches = new Dictionary<string, List<CheckBox>>();
 
-        public SettingsWindow(Func<bool, bool> setPrivacy, Action<Skin> setSkin)
+        public SettingsWindow(Func<bool, bool> setPrivacy)
         {
             Title = "墨团 · 设置与演示";
             Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/InkCat;component/icon.ico"));
@@ -30,19 +30,15 @@ namespace InkCat
             FontSize = 13;
 
             var left = new StackPanel { Width = 390, Margin = new Thickness(16) };
-            left.Children.Add(new Border
+            var preview = new Border
             {
                 CornerRadius = new CornerRadius(12), Child = cat,
                 Background = new LinearGradientBrush(Color.FromRgb(0xCC, 0xDE, 0xE8), Color.FromRgb(0xED, 0xE6, 0xD6), 90),
-            });
+            };
+            left.Children.Add(preview);
             left.Children.Add(caption);
             left.Children.Add(Row(HorizontalAlignment.Center, PlayButton("演示新动作", Demo.All.Where(d => d.IsNew).ToArray()), PlayButton("全部演示", Demo.All), stop));
             left.Children.Add(PrivacyPanel(setPrivacy));
-            left.Children.Add(Picker("外观", Skin.All.Select(s => (s.Title, s.Id)), "skin", Skin.Current.Id, id =>
-            {
-                cat.Skin = Skin.Current;
-                setSkin(Skin.Current);
-            }));
             left.Children.Add(Picker("表情灵敏度", new[] { ("灵敏", 0.7), ("普通", 1.0), ("迟钝", 1.3), ("很迟钝", 1.7) }, "moodScale", 1.0));
             left.Children.Add(Picker("无操作后打盹", new[] { ("30 秒", 30.0), ("90 秒", 90.0), ("3 分钟", 180.0), ("不打盹", 0.0) }, "nap", 90.0));
 
@@ -55,13 +51,49 @@ namespace InkCat
 
             var root = new DockPanel { Height = 570 };
             root.Children.Add(left);
-            root.Children.Add(new ScrollViewer { Content = right, Width = 340, Background = Brushes.White, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+            TabItem Tab(string title, UIElement content) => new TabItem { Header = title, Padding = new Thickness(16, 4, 16, 4), Content = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+            root.Children.Add(new TabControl { Width = 350, Items = { Tab("外观", looks), Tab("动作", right) } });
             Content = root;
             Background = new SolidColorBrush(Color.FromRgb(0xF6, 0xF6, 0xF6));
 
             stop.Click += (s, e) => Stop();
-            Closed += (s, e) => Stop();
+            Action<Look> dress = look => cat.Look = look;
+            Wardrobe.Shared.Dressed += dress;
+            Closed += (s, e) =>
+            {
+                Stop();
+                Wardrobe.Shared.Dressed -= dress;
+            };
+            looks.AdjustingChanged += () => ShowCurrent(null);
+            MakeDraggable(preview);
             ShowCurrent(null);
+        }
+
+        readonly LookPane looks = new LookPane();
+
+        /// <summary>调整位置时，在预览上拖动就移动选中的部位。</summary>
+        void MakeDraggable(Border preview)
+        {
+            Point from = default;
+            Place start = null;
+            preview.MouseLeftButtonDown += (s, e) =>
+            {
+                if (!(looks.Adjusting is Slot slot)) return;
+                (from, start) = (e.GetPosition(preview), Wardrobe.Shared.PlaceOf(slot));
+                preview.CaptureMouse();
+            };
+            preview.MouseMove += (s, e) =>
+            {
+                if (start == null || !(looks.Adjusting is Slot slot)) return;
+                var d = (e.GetPosition(preview) - from) * (CatView.Scene.Width / preview.ActualWidth);
+                Wardrobe.Shared.Move(slot, new Place { x = Math.Round(start.x + d.X), y = Math.Round(start.y + d.Y), scale = start.scale, angle = start.angle }.Clamped());
+            };
+            preview.MouseLeftButtonUp += (s, e) =>
+            {
+                start = null;
+                preview.ReleaseMouseCapture();
+            };
+            preview.LostMouseCapture += (s, e) => start = null;
         }
 
         static StackPanel Row(HorizontalAlignment align, params UIElement[] items)
@@ -144,7 +176,7 @@ namespace InkCat
 
         void ShowCurrent(Demo demo)
         {
-            caption.Text = demo == null ? "点右侧 ▶ 查看单个动作" : "正在演示：" + demo.Name;
+            caption.Text = demo != null ? "正在演示：" + demo.Name : looks.Adjusting is Slot slot ? $"在图上拖动可以移动{slot.Title()}" : "换好后可以点下面的按钮看动作";
             stop.IsEnabled = demo != null;
         }
 

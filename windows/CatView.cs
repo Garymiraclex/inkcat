@@ -24,7 +24,7 @@ namespace InkCat
 
         readonly ScaleTransform zoom = new ScaleTransform();
         readonly TranslateTransform shake = new TranslateTransform();
-        readonly Canvas stage, arms = Layer(), bubbles = Layer(), mood = Layer(), blush = Layer(), sweat = Layer(), mouse = Layer();
+        readonly Canvas stage, arms = Layer(), lights = Layer(), joint = Layer(), bubbles = Layer(), mood = Layer(), blush = Layer(), sweat = Layer(), mouse = Layer();
         readonly Image plate = Picture(0, 0, 1200, 896), face = Picture(400, 200, 360, 272), mouseImage = Picture(0, 0, 176, 136);
         readonly Image tail = Picture(860, 290, 240, 400);
         readonly Image[] squints = { Picture(400, 250, 290, 150), Picture(400, 250, 290, 150) };
@@ -41,7 +41,7 @@ namespace InkCat
         readonly Path wheel = new Path { Fill = glow, Stroke = ink, StrokeThickness = 4, Opacity = 0 };
 
         static readonly Point leftHome = new Point(600, 640), rightHome = new Point(362, 612);
-        Point leftRest = leftHome, rightRest = rightHome, mousePosition;
+        Point leftRest = leftHome, rightRest = rightHome, mousePosition, mouseAt = new Point(0.5, 0.5);
         readonly List<int> held = new List<int>();
         readonly Dictionary<Hand, Point> tapped = new Dictionary<Hand, Point>();  // 隐私模式下正按着的落点
         Hand spaceHand = Hand.Left, tapHand = Hand.Left;
@@ -50,12 +50,13 @@ namespace InkCat
         int moodLevel;
         DateTime lastActivity = DateTime.UtcNow, lastKey = DateTime.UtcNow, lastFollow, lastScroll, nextBlink, nextWag, nextZ;
 
-        Skin skin = Skin.Current;
-        public Skin Skin { get => skin; set { skin = value; Dress(); } }
+        Look look;
+        public Look Look { set { look = value; Dress(); } }
 
-        public CatView(bool preview = false)
+        public CatView(bool preview = false, Look look = null)
         {
             isPreview = preview;
+            this.look = look ?? new Look();
             var group = new TransformGroup { Children = { zoom, shake } };
             stage = new Canvas { Width = Scene.Width, Height = Scene.Height, RenderTransform = group };
             Children.Add(stage);
@@ -136,23 +137,9 @@ namespace InkCat
             void Add(params UIElement[] all) { foreach (var e in all) stage.Children.Add(e); }
 
             tail.RenderTransform = wag;
-            tail.Source = Skin.Load("tail");
             face.Opacity = 0;
             BuildMood();
-            Add(tail, plate, mood, face);
-
-            foreach (var key in Keyboard.Keys.Values)
-            {
-                var h = key.Half * (1 - 5 / key.Half.Length);
-                var d = new Vector(8, -7);  // 键深方向的一半
-                var shape = new Polygon
-                {
-                    Points = new PointCollection { key.Center + h + d, key.Center + h - d, key.Center - h - d, key.Center - h + d },
-                    Fill = glow, Stroke = glow, StrokeThickness = 5, StrokeLineJoin = PenLineJoin.Round, Opacity = 0,
-                };
-                glows[key.Code] = shape;
-                Add(shape);
-            }
+            Add(tail, plate, mood, face, lights);
 
             mouse.RenderTransform = mouseSpot;
             mouseImage.Effect = new DropShadowEffect { Color = Colors.Black, Opacity = 0.22, BlurRadius = 12, ShadowDepth = 11.4, Direction = 322 };
@@ -161,11 +148,7 @@ namespace InkCat
             mouse.Children.Add(wheel);
             foreach (var b in buttons) b.Opacity = 0;
 
-            // 右肩外侧的圆弧，手臂内收时补住轮廓
-            Point Rim(double turn) => new Point(450 + 41 * Math.Cos(turn * Math.PI), 531 - 41 * Math.Sin(turn * Math.PI));
-            string rim = FormattableString.Invariant($"{Rim(0.62)} A41,41 0 0 0 {Rim(1.05)}");
-            arms.Children.Add(Outline($"M450,531 L{rim}Z", Color(0xB59B70)));
-            arms.Children.Add(Outline($"M{rim}", null, Color(0x3B2418), 6));
+            arms.Children.Add(joint);
             foreach (var limb in new Limb[] { right, left, mouser }) arms.Children.Add(limb);
             Add(mouse, arms, bubbles);
 
@@ -177,18 +160,57 @@ namespace InkCat
             Dress();
         }
 
-        /// <summary>换上当前皮肤的图。</summary>
+        /// <summary>换上当前装扮的图。</summary>
         void Dress()
         {
+            ReleaseAll();  // 键位可能变了
             double detail = Math.Min(1, 1.5 * zoom.ScaleX * VisualTreeHelper.GetDpi(this).DpiScaleX);
-            face.Source = skin.Image("face_sleep");
-            mouseImage.Source = skin.Image("mouse");
-            foreach (var limb in new Limb[] { right, left, mouser }) limb.Dress(skin, detail);
+            tail.Source = look.Image("tail");
+            face.Source = look.Image("face_sleep");
+            squints[0].Source = look.Image("eyes_focus");
+            squints[1].Source = look.Image("eyes_tense");
+            mouseImage.Source = look.Image("mouse");
+            (mouseImage.Width, mouseImage.Height) = (look.MouseSize.Width, look.MouseSize.Height);
+            foreach (var limb in new Limb[] { right, left, mouser }) limb.Dress(look, detail);
+            BuildLights();
+            BuildJoint();
             BuildButtons();
+            MoveMouse(mouseAt, 0);
+            mouser.Reach(MousePaw, 0);
             ShowPose();
         }
 
-        void ShowPose() => plate.Source = skin.Image(secure ? "plate_cover" : "plate");
+        void ShowPose() => plate.Source = look.Image(secure ? "plate_cover" : "plate");
+
+        /// <summary>键帽亮光，平时透明。</summary>
+        void BuildLights()
+        {
+            lights.Children.Clear();
+            glows.Clear();
+            foreach (var key in Keyboard.Keys.Values)
+            {
+                var h = key.Half * (1 - 5 / key.Half.Length);
+                var d = new Vector(8, -7);  // 键深方向的一半
+                var shape = new Polygon
+                {
+                    Points = new PointCollection { key.Center + h + d, key.Center + h - d, key.Center - h - d, key.Center - h + d },
+                    Fill = glow, Stroke = glow, StrokeThickness = 5, StrokeLineJoin = PenLineJoin.Round, Opacity = 0,
+                };
+                glows[key.Code] = shape;
+                lights.Children.Add(shape);
+            }
+        }
+
+        /// <summary>右肩外侧的圆弧，手臂内收时补住轮廓。</summary>
+        void BuildJoint()
+        {
+            joint.Children.Clear();
+            if (look.Joint.Length != 2) return;
+            Point Rim(double turn) => new Point(450 + 41 * Math.Cos(turn * Math.PI), 531 - 41 * Math.Sin(turn * Math.PI));
+            string rim = FormattableString.Invariant($"{Rim(0.62)} A41,41 0 0 0 {Rim(1.05)}");
+            joint.Children.Add(Outline($"M450,531 L{rim}Z", Color(look.Joint[0])));
+            joint.Children.Add(Outline($"M{rim}", null, Color(look.Joint[1]), 6));
+        }
 
         void ShowLeftArm()
         {
@@ -199,22 +221,32 @@ namespace InkCat
         /// <summary>左右键高亮、火花与滚轮。</summary>
         void BuildButtons()
         {
-            string[] areas = { skin.LeftButton, skin.RightButton };
+            Point[][] areas = { look.LeftButton, look.RightButton }, classic = { Look.ClassicLeft, Look.ClassicRight };
             string[] rays = { "M44,140 36,164 M78,140 80,168 M110,132 124,155", "M2,70 -22,62 M-2,96 -28,102 M12,122 -8,142" };
             for (int i = 0; i < 2; i++)
             {
                 buttons[i].Children.Clear();
-                buttons[i].Children.Add(Outline(areas[i], Color(0xFF8A4C, 0.85)));
-                buttons[i].Children.Add(Outline(rays[i], null, spark, 10));
+                var lit = new Canvas { Width = mouseImage.Width, Height = mouseImage.Height, Children = { Outline(Area(areas[i]), Color(0xFF8A4C, 0.85)) } };
+                if (look.Images.Count > 0) lit.OpacityMask = new ImageBrush(look.Image("mouse")) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(look.MouseSize) };  // 亮区不超出鼠标
+                buttons[i].Children.Add(lit);
+                var sparks = Outline(rays[i], null, spark, 10);
+                var shift = Middle(areas[i]) - Middle(classic[i]);  // 火花跟着按键走
+                sparks.RenderTransform = new TranslateTransform(shift.X, shift.Y);
+                buttons[i].Children.Add(sparks);
             }
-            wheel.Data = Geometry.Parse(skin.Wheel);
+            wheel.Data = Area(look.Wheel);
         }
+
+        static Geometry Area(Point[] points) => new PathGeometry(new[] { new PathFigure(points[0], new[] { new PolyLineSegment(points.Skip(1), true) }, true) });
+
+        static Point Middle(Point[] p) => new Point((p.Min(q => q.X) + p.Max(q => q.X)) / 2, (p.Min(q => q.Y) + p.Max(q => q.Y)) / 2);
 
         /// <summary><paramref name="p"/> 为光标在屏幕内的比例位置（左下原点）。猫面向观众，它的右和前对应画面的左和下。</summary>
         void MoveMouse(Point p, double seconds)
         {
             var far = new Point(880, 742) + (new Point(774, 719) - new Point(880, 742)) * p.X;
             var near = new Point(806, 783) + (new Point(704, 776) - new Point(806, 783)) * p.X;
+            mouseAt = p;
             mousePosition = far + (near - far) * p.Y;
             void Slide(DependencyProperty axis, double value)
             {
@@ -265,7 +297,8 @@ namespace InkCat
             NoteTyping();
             if (random.Next(4) > 0) tapHand = Other(tapHand);
             var hand = tapHand;
-            var p = tapSpots[hand][random.Next(tapSpots[hand].Length)];
+            var spots = TapSpots[hand];
+            var p = spots[random.Next(spots.Length)];
             tapped[hand] = p;
             UpdateArms();
             After(0.1, () =>
@@ -277,7 +310,7 @@ namespace InkCat
         }
 
         /// <summary>字母区各键的位置，按手分组。</summary>
-        static readonly Dictionary<Hand, Point[]> tapSpots = Keyboard.Keys.Values
+        static Dictionary<Hand, Point[]> TapSpots => Keyboard.Keys.Values
             .Where(k => k.Label.Length == 1 && k.Label[0] >= 'A' && k.Label[0] <= 'Z')
             .GroupBy(k => k.Hand, k => k.Center).ToDictionary(g => g.Key, g => g.ToArray());
 
@@ -444,12 +477,10 @@ namespace InkCat
         /// <summary>眯眼、腮红、汗滴，默认透明。</summary>
         void BuildMood()
         {
-            string[] names = { "eyes_focus", "eyes_tense" };
-            for (int i = 0; i < 2; i++)
+            foreach (var squint in squints)
             {
-                squints[i].Source = Skin.Load(names[i]);
-                squints[i].Opacity = 0;
-                mood.Children.Add(squints[i]);
+                squint.Opacity = 0;
+                mood.Children.Add(squint);
             }
             blush.Children.Add(Outline(new EllipseGeometry(new Rect(432, 342, 48, 24)), Color(0xEB755F)));
             blush.Children.Add(Outline(new EllipseGeometry(new Rect(614, 350, 52, 24)), Color(0xEB755F)));
