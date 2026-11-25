@@ -18,7 +18,18 @@
 
 ## 安装
 
-需要 macOS 13 以上和 Xcode 命令行工具（`xcode-select --install`）。
+需要 macOS 13 以上。
+
+### 下载
+
+1. 在 [Releases](https://github.com/Garymiraclex/inkcat/releases/latest) 下载 DMG（Apple 芯片和 Intel 通用），把 InkCat 拖进「应用程序」。
+2. 程序没有经过 Apple 公证，第一次打开会被系统拦住。到「系统设置 → 隐私与安全性」，在页面下方点「仍要打开」。较旧的系统也可以右键 InkCat 选「打开」。
+
+不放心就自己编译，代码都在这里。公司管理的电脑可能不允许打开未公证的程序。
+
+### 自己编译
+
+需要 Xcode 命令行工具（`xcode-select --install`）。
 
 ```bash
 git clone https://github.com/Garymiraclex/inkcat.git
@@ -27,7 +38,9 @@ cd inkcat
 open InkCat.app
 ```
 
-只在一台 Apple 芯片、macOS 26 的 Mac 上测试过。
+只在一台 Apple 芯片、macOS 26 的 Mac 上测试过；Intel 版只通过 Rosetta 跑过动作测试。
+
+`./release.sh` 可以打包通用版 DMG。
 
 ## 隐私
 
@@ -52,7 +65,7 @@ open InkCat.app
 
 取消勾选「隐私模式」，在系统弹窗里允许，然后重开墨团。
 
-应用用的是本地临时签名，**每次重新编译，系统都会把它当成新程序**，之前的授权随之失效。此时在「系统设置 → 隐私与安全性 → 输入监控」里用「−」删掉旧的墨团，重开，再关闭隐私模式即可。
+应用用的是临时签名，**每次更新或重新编译，系统都会把它当成新程序**，之前的授权随之失效。此时在「系统设置 → 隐私与安全性 → 输入监控」里用「−」删掉旧的墨团，重开，再关闭隐私模式即可。
 
 ## 代码结构
 

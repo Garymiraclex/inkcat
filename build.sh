@@ -16,6 +16,11 @@ for n in 16 32 128 256 512; do
 done
 iconutil -c icns "$iconset" -o InkCat.app/Contents/Resources/AppIcon.icns
 
-swiftc -O -swift-version 5 -target "$(uname -m)-apple-macos13.0" Sources/*.swift -o InkCat.app/Contents/MacOS/InkCat
+# 默认只编译本机架构；ARCHS="arm64 x86_64" 则合成通用版
+out=$(mktemp -d)
+for arch in ${=ARCHS:-$(uname -m)}; do
+    swiftc -O -swift-version 5 -module-name InkCat -target "$arch-apple-macos13.0" Sources/*.swift -o "$out/$arch"
+done
+lipo -create "$out"/* -output InkCat.app/Contents/MacOS/InkCat
 codesign --force --sign - --options runtime --entitlements InkCat.entitlements InkCat.app
 echo "完成：$PWD/InkCat.app"
