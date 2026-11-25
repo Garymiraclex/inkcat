@@ -25,7 +25,7 @@ namespace InkCat
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             output = args[0];
             Directory.CreateDirectory(output);
-            new System.Windows.Application();
+            new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             Section("键位", Keys);
             Section("节奏", Rhythms);
             Section("姿势", Poses);
@@ -202,6 +202,8 @@ namespace InkCat
         static void Drive(Process process, Window target, System.Windows.Controls.TextBox box, System.Windows.Controls.PasswordBox secret, System.Windows.Forms.TextBox native)
         {
             Wait(4);
+            if (process.HasExited)
+                foreach (var entry in new EventLog("Application").Entries.Cast<EventLogEntry>().Reverse().Where(x => x.Source == ".NET Runtime").Take(1)) Console.WriteLine(entry.Message);
             var cat = FindWindow(null, "墨团");
             Check(cat != IntPtr.Zero, "猫窗口出现");
             Native.GetWindowRect(cat, out var r);

@@ -11,10 +11,10 @@ namespace InkCat
 {
     sealed class App : Application
     {
-        readonly RawInput input = new RawInput();
-        readonly CatWindow window = new CatWindow();
         readonly Forms.NotifyIcon tray = new Forms.NotifyIcon();
         readonly Forms.ContextMenuStrip menu = new Forms.ContextMenuStrip();
+        RawInput input;
+        CatWindow window;
         KeyCounter counter;
         SettingsWindow settings;
         bool away;
@@ -34,6 +34,8 @@ namespace InkCat
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            input = new RawInput();
+            window = new CatWindow();
             Cat.ShowsBubbles = Prefs.Get("bubbles", false);
             window.MenuRequested += () =>
             {
