@@ -186,7 +186,7 @@ namespace InkCat
             var host = new System.Windows.Forms.Integration.WindowsFormsHost { Child = native, Margin = new Thickness(0, 12, 0, 0) };
             var target = new Window
             {
-                Title = "target", Left = 40, Top = 40, Width = 480, Height = 220, Topmost = false,
+                Title = "target", Left = 0, Top = 0, Width = 1024, Height = 768, Background = System.Windows.Media.Brushes.LightSteelBlue,  // 垫在猫后面
                 Content = new System.Windows.Controls.StackPanel { Children = { box, secret, host } },
             };
             target.Show();
@@ -329,6 +329,7 @@ namespace InkCat
             // 隐私模式下只动鼠标：不能误当成打字（猫的右爪和键盘那一块不动）
             var paw = new Native.RECT { Left = r.Left + 70, Top = r.Top + 95, Right = r.Left + 150, Bottom = r.Top + 185 };
             SetCursorPos(400, 330);
+            mouse_event(1, 2, 1, 0, IntPtr.Zero);
             Wait(1.5);
             var quiet = Screen("live_mouse_before");
             int wrong = 0;
