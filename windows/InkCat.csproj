@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- .NET Framework 4.8 是 Windows 10（1903 起）和 11 自带的，单个 exe 即可运行 -->
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>InkCat</RootNamespace>
+    <AssemblyTitle>墨团</AssemblyTitle>
+    <Product>InkCat</Product>
+    <Version>1.1.0</Version>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Prefer32Bit>false</Prefer32Bit>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebugType>none</DebugType>
+    <GenerateSupportedRuntime>false</GenerateSupportedRuntime>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+    <Resource Include="..\Assets\**\*.png" Exclude="..\Assets\icon.png;..\Assets\status.png" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Resource Include="icon.ico" />
+    <InternalsVisibleTo Include="InkCat.Test" />
+  </ItemGroup>
+</Project>
