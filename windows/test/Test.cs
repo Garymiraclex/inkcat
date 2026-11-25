@@ -110,7 +110,7 @@ namespace InkCat
         {
             using (var b = new Bitmap(w, h))
             {
-                using (var g = Graphics.FromImage(b)) { g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; draw(g); }
+                using (var g = Graphics.FromImage(b)) { (g.SmoothingMode, g.PixelOffsetMode) = (System.Drawing.Drawing2D.SmoothingMode.AntiAlias, System.Drawing.Drawing2D.PixelOffsetMode.Half); draw(g); }
                 b.Save(path);
             }
         }
@@ -121,6 +121,12 @@ namespace InkCat
             Library.Prepare();
             Check(File.Exists(Path.Combine(Library.Folder, "素材说明.txt")) && Directory.GetFiles(Path.Combine(Library.Folder, "_模板", "原版")).Length == 8 && Directory.GetFiles(Path.Combine(Library.Folder, "_模板", "电竞")).Length == 6, "素材文件夹和模板");
             Frames(NewPack("搭着"), f => f == "type_both" ? "idle" : f);
+            // 右臂搭着、左臂敲键：左半边用 idle，右半边用 type_both
+            string half = NewPack("半搭");
+            Frames(half, f => f);
+            var (a, b) = (Library.Decode(Art.Read("packs/classic/idle.png"), ""), Library.Decode(Art.Read("packs/classic/type_both.png"), ""));
+            for (int y = 0; y < Cutter.H; y++) for (int x = 0; x < 480; x++) b[x, y] = a[x, y];
+            using (var file = File.Create(Path.Combine(half, "type_both.png"))) new PngBitmapEncoder { Frames = { BitmapFrame.Create(b.Image) } }.Save(file);
             string kit = NewPack("配件");
             Picture(Path.Combine(kit, "hat.png"), 2400, 1792, g =>  // 白底、双倍大小
             {
@@ -269,7 +275,7 @@ namespace InkCat
 
         static void Poses()
         {
-            foreach (var (name0, look) in new[] { ("classic", new Look()), ("gamer", Compose(("keyboard", "gamer"), ("pad", "gamer"), ("mouse", "gamer"), ("headset", "gamer")).Look), ("mix", Compose(("cat", "user/搭着"), ("keyboard", "gamer"), ("headset", "gamer"), ("hat", "user/配件"), ("mouse", "user/配件")).Look) })
+            foreach (var (name0, look) in new[] { ("classic", new Look()), ("gamer", Compose(("keyboard", "gamer"), ("pad", "gamer"), ("mouse", "gamer"), ("headset", "gamer")).Look), ("mix", Compose(("cat", "user/半搭"), ("keyboard", "gamer"), ("headset", "gamer"), ("hat", "user/配件"), ("mouse", "user/配件")).Look) })
             {
                 Keyboard.Rows = look.Rows;
                 var cat = new CatView(preview: true, look: look) { ShowsBubbles = true, Width = 600, Height = 448 };
@@ -314,6 +320,26 @@ namespace InkCat
             target.Render(w);
             Save(target, "settings");
             Check(w.ActualWidth > 700, $"窗口 {w.ActualWidth:0}×{w.ActualHeight:0}");
+
+            // 调整位置：点鼠标那一行的按钮，拖大小滑块
+            IEnumerable<T> All<T>(DependencyObject o) where T : DependencyObject =>
+                Enumerable.Range(0, VisualTreeHelper.GetChildrenCount(o)).Select(i => VisualTreeHelper.GetChild(o, i)).SelectMany(c => (c is T t ? new[] { t } : new T[0]).Concat(All<T>(c)));
+            Wardrobe.Shared.Choose(Slot.Mouse, "gamer");
+            Wardrobe.Shared.Choose(Slot.Hat, "user/配件");
+            Wardrobe.Shared.Choose(Slot.Scarf, "user/没有这个");
+            Wait(1.5);
+            All<System.Windows.Controls.Button>(w).Where(x => (x.Content as string) == "✥").ElementAt(3).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Wait(0.3);
+            All<System.Windows.Controls.Slider>(w).First(x => x.IsVisible).Value = 1.4;
+            Wait(1.5);
+            Check(Math.Abs(Wardrobe.Shared.PlaceOf(Slot.Mouse).scale - 1.4) < 0.01 && Wardrobe.Shared.Look.MouseSize.Width > 200, "滑块放大内置鼠标");
+            target.Clear();
+            target.Render(w);
+            Save(target, "settings_adjust");
+            Wardrobe.Shared.Move(Slot.Mouse, new Place());
+            Wardrobe.Shared.Choose(Slot.Hat, "");
+            Wardrobe.Shared.Choose(Slot.Scarf, "");
+            Wait(1);
             w.Close();
         }
 
@@ -353,6 +379,7 @@ namespace InkCat
         {
             Prefs.Set("tail", false);  // 尾巴会干扰截图对比
             Prefs.Set("bubbles", true);
+            Wardrobe.Shared.WearAll(Wardrobe.Shared.Packs.First(p => p.Id == Pack.Classic));
             Prefs.Set("privacy", true);
 
             // 一个自己的窗口接住模拟的输入
@@ -390,6 +417,9 @@ namespace InkCat
                 Check(Owner(r, 0.45, 0.45) != Cat, "锁定后点击穿透");
                 Screen("live_150");
             });
+            Wardrobe.Shared.Choose(Slot.Keyboard, "gamer");
+            Wardrobe.Shared.Choose(Slot.Headset, "gamer");
+            Run(p => { Check(Cat != IntPtr.Zero, "穿着电竞启动"); Screen("live_gamer"); });
             Prefs.Set("scale", 1.0);
             Prefs.Set("locked", false);
             Prefs.Set("x", 99999);

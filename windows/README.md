@@ -8,7 +8,11 @@
 
 程序没有代码签名，第一次打开可能出现「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」。监听键盘的小程序也可能被杀毒软件误报。不放心就自己编译，代码都在这里；公司管理的电脑可能不允许打开。
 
-卸载：退出后删掉 `InkCat.exe`，设置存在注册表 `HKEY_CURRENT_USER\Software\InkCat`，可以一并删除。
+卸载：退出后删掉 `InkCat.exe`。设置存在注册表 `HKEY_CURRENT_USER\Software\InkCat`，素材在 `%APPDATA%\InkCat`，拆图缓存在 `%LOCALAPPDATA%\InkCat`，可以一并删除。
+
+## 换装
+
+右键猫 →「设置与演示 → 外观」。猫、键盘、桌垫、鼠标、耳机、帽子、围巾分别换，自己的图放进素材文件夹就生效，不用编译。素材包和 Mac 版通用，图怎么画见[素材要求](../docs/ART_BRIEF.md)，怎么放见[换素材说明](../docs/CUSTOM_ART.md)。
 
 ## 隐私
 
@@ -19,7 +23,7 @@
 | 屏幕上显示 | 随机落点的敲击 | 爪子落到那个键、键帽亮起；按键气泡默认关闭，可在菜单里打开 |
 
 - **不联网**：代码里没有网络调用。但 Windows 版没有 Mac 那样由系统强制的沙盒。
-- **不记录**：按键不写入文件，只用来驱动动画；注册表里只有各项设置和窗口位置。
+- **不记录**：按键不写入文件，只用来驱动动画；注册表里只有各项设置和窗口位置，文件只有素材和拆图缓存。
 - **隐藏、锁屏、切换用户时**停止感知键盘（锁屏和切换用户没有实测）。
 
 需要知道的限制：
@@ -37,7 +41,7 @@
 dotnet build windows/InkCat.csproj -c Release -o out
 ```
 
-每次推送都会在 GitHub 的 Windows 机器上自动编译并跑一遍 `windows/test`：离屏渲染各种姿势，再启动真程序，用模拟的键盘鼠标操作并截屏对比。没有覆盖的：多显示器不同缩放、高分屏、触控板和触摸屏、实体键盘的手感。
+每次推送都会在 GitHub 的 Windows 机器上自动编译并跑一遍 `windows/test`：拆图、换装、坏素材和各种姿势的离屏测试，再启动真程序，用模拟的键盘鼠标操作并截屏对比。没有覆盖的：多显示器不同缩放、高分屏、触控板和触摸屏、实体键盘的手感。
 
 ## 文件
 
@@ -49,7 +53,8 @@ dotnet build windows/InkCat.csproj -c Release -o out
 | `Limbs.cs` | 两种手臂 |
 | `Input.cs` | 键鼠监听、隐私模式的节奏、密码框识别 |
 | `Keyboard.cs` | 键位、指法 |
-| `Skin.cs` | 外观和鼠标按键轮廓 |
+| `Wardrobe.cs` `LookPane.cs` | 当前的装扮和「外观」页 |
+| `Library.cs` `Composer.cs` | 素材包的扫描、校验；把选中的部位合成一身装扮 |
+| `Cutter.cs` `Raster.cs` | 拆猫和图像运算，与 Mac 版 `Sources/Cutter.swift` 对应 |
 | `Settings.cs` `Demo.cs` | 设置与演示窗口 |
 
-换素材的要求和 Mac 版相同，见 [ART_BRIEF.md](../docs/ART_BRIEF.md)。换了鼠标外形时，按键轮廓要同时改 `Skin.cs`。
