@@ -1,0 +1,5 @@
+.DS_Store
+InkCat.app/
+# 早期草稿，不参与编译
+art/v1/
+art/DESIGN_SPEC.md
