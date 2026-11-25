@@ -80,4 +80,7 @@ swift art/cut.swift art/frames Assets
 
 ## 许可证
 
-[MIT](LICENSE)
+- 代码：[MIT](LICENSE)
+- 图片（`Assets/`、`art/frames/`、`docs/`）：[保留所有权利](LICENSE-ART.md)，只允许为编译和个人运行墨团而使用
+
+*Code is MIT. Images are all rights reserved and not covered by MIT.*
