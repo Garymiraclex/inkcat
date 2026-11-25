@@ -12,7 +12,7 @@
 - **鼠标**：跟手移动，左右键和滚轮都有反应
 - **神态**：眨眼、甩尾、打盹；打得快会眯眼、冒汗、微微抖动
 - **输密码**：系统开启密码保护（安全输入）时捂眼，不显示任何按键
-- **外观**：原版和电竞（耳机、黑键盘）两套，随时切换
+- **外观**：猫、键盘、桌垫、鼠标、耳机、帽子、围巾可以分别换，[自己的图放进文件夹就生效](docs/CUSTOM_ART.md)；自带原版和电竞两套
 - **隐私模式**（默认开启）：只跟着敲击节奏动，不读取按键，也不需要权限
 
 右键猫或点菜单栏图标可以调大小、锁定位置、切换隐私模式。「设置与演示」里可以换外观，也可以逐个预览和开关动作。
@@ -54,7 +54,7 @@ open InkCat.app
 | 屏幕上显示 | 随机落点的敲击 | 按了什么键 |
 
 - **不联网**：开启 App Sandbox，没有网络权限，代码里也没有网络调用。
-- **不记录**：按键不写入文件，只用来驱动动画；偏好设置里只有各项设置和窗口位置。
+- **不记录**：按键不写入文件，只用来驱动动画；偏好设置里只有各项设置和窗口位置，另有一个放素材的文件夹和拆图缓存，都在程序自己的沙盒里。
 - **隐藏、锁屏、切换用户时**停止感知键盘（锁屏和切换用户没有在真机上验证）。
 
 需要知道的限制：
@@ -78,19 +78,15 @@ open InkCat.app
 | `Sources/InputMonitor.swift` | 读取按键和鼠标（只读） |
 | `Sources/KeyCounter.swift` | 隐私模式：只数系统累计的按键次数 |
 | `Sources/CatView.swift` | 猫的图层和动作 |
-| `Sources/Skin.swift` | 外观：皮肤素材和对应的鼠标亮区 |
+| `Sources/Wardrobe.swift` | 当前的装扮，以及什么时候重新合成 |
+| `Sources/Library.swift` | 素材包：扫描、校验、监听文件夹 |
+| `Sources/Cutter.swift` | 把整帧图拆成活动部件 |
+| `Sources/Composer.swift` | 把选中的部位合成一身装扮 |
 | `Sources/Keyboard.swift` | 键位、指法和透视坐标 |
-| `Sources/Settings.swift`、`Demo.swift` | 设置窗口与动作演示 |
-| `art/cut.swift` | 把 `art/frames/` 的整帧图拆成 `Assets/` 里的活动部件 |
+| `Sources/Settings.swift`、`LookPane.swift`、`Demo.swift` | 设置窗口、换装与动作演示 |
+| `art/cut.swift` | 用原画生成 `Assets/` 里的内置素材 |
 
-重新拆图：
-
-```bash
-swift -O art/cut.swift art/frames Assets
-swift -O art/cut.swift art/frames Assets/gamer art/skins/gamer
-```
-
-想换成自己的键盘、鼠标、耳机或猫：图要怎么画、给生图 AI 的提示词见[素材要求](docs/ART_BRIEF.md)，怎么装进程序见[换素材说明](docs/CUSTOM_ART.md)。
+想换成自己的猫、键盘、鼠标、耳机、帽子或围巾：图要怎么画、给生图 AI 的提示词见[素材要求](docs/ART_BRIEF.md)，怎么放进去见[换素材说明](docs/CUSTOM_ART.md)。都不用编译。
 
 ## 关于
 

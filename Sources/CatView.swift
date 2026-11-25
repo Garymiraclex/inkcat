@@ -24,9 +24,8 @@ private func withoutAnimation(_ body: () -> Void) {
 
 private extension CALayer {
     /// 按素材原始像素尺寸建层；`origin` 为它在画面中的左上角。
-    convenience init(asset: String, origin: CGPoint, size: CGSize) {
+    convenience init(origin: CGPoint, size: CGSize) {
         self.init()
-        contents = Bundle.main.image(forResource: asset)
         frame = CGRect(origin: Scene.at(origin.x, origin.y + size.height), size: size)
         minificationFilter = .trilinear
     }
@@ -73,7 +72,7 @@ private final class Arm {
         parent.addSublayer(layer)
     }
 
-    func dress(_ skin: Skin) { layer.contents = skin.image(asset) }
+    func dress(_ look: Look) { layer.contents = look.image(asset) }
 
     func reach(_ tip: CGPoint, duration: CFTimeInterval) {
         let dx = tip.x - shoulder.x, dy = tip.y - shoulder.y
@@ -95,9 +94,9 @@ private final class BendyArm {
     private static let width: CGFloat = 140, length: CGFloat = 175, count = 42, paw: CGFloat = 76
     private let asset: String
     private var images: [NSImage?] = [nil, nil]  // 外展、内收
-    private var slices: [CALayer] = [], tucked = false
+    private var slices: [CALayer] = [], tucked = false, covered = false
     /// 内收时盖住根部的肩头。
-    private let shoulder = CALayer(asset: "shoulder", origin: CGPoint(x: 396, y: 440), size: CGSize(width: 120, height: 120))
+    private let shoulder = CALayer(origin: CGPoint(x: 396, y: 440), size: CGSize(width: 120, height: 120))
 
     init(_ asset: String, in parent: CALayer) {
         self.asset = asset
@@ -117,8 +116,11 @@ private final class BendyArm {
         parent.addSublayer(layer)
     }
 
-    func dress(_ skin: Skin) {
-        images = [asset, asset + "_in"].map(skin.image)
+    func dress(_ look: Look) {
+        images = [asset, asset + "_in"].map(look.image)
+        shoulder.contents = look.image("shoulder")
+        covered = look.joint.isEmpty
+        if covered { shoulder.opacity = 1 } else if !tucked { shoulder.opacity = 0 }
         slices.forEach { $0.contents = images[tucked ? 1 : 0] }
     }
 
@@ -161,7 +163,7 @@ private final class BendyArm {
         CATransaction.begin()
         CATransaction.setAnimationDuration(duration)
         CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-        shoulder.opacity = Float(min(inward * 4, 1))
+        shoulder.opacity = covered ? 1 : Float(min(inward * 4, 1))
         for (i, s) in slices.enumerated() {
             let a = place(CGFloat(i) * step), b = place(CGFloat(i + 1) * step)
             let p = on((a + b) / 2), before = on((a + b) / 2 - 9), after = on((a + b) / 2 + 9)  // 取宽一点的切线更平滑
@@ -178,20 +180,20 @@ final class CatView: NSView {
     static let baseSize = CGSize(width: 300, height: 224)
     var showsBubbles = true
 
-    var skin = Skin.current { didSet { withoutAnimation(dress) } }
+    var look: Look { didSet { withoutAnimation(dress) } }
 
     /// 设置窗口里的演示猫：不看真实输入，所有动作可用。
     private let isPreview: Bool
 
     private enum Pose: String { case normal = "plate", cover = "plate_cover" }
     private var images: [Pose: NSImage?] = [:]
-    private let tail = CALayer(asset: "tail", origin: CGPoint(x: 860, y: 290), size: CGSize(width: 240, height: 400))
+    private let tail = CALayer(origin: CGPoint(x: 860, y: 290), size: CGSize(width: 240, height: 400))
     private let mood = CALayer(), blush = CALayer(), sweat = CALayer()
-    private let squints = ["eyes_focus", "eyes_tense"].map { CALayer(asset: $0, origin: CGPoint(x: 400, y: 250), size: CGSize(width: 290, height: 150)) }
+    private let squints = (0..<2).map { _ in CALayer(origin: CGPoint(x: 400, y: 250), size: CGSize(width: 290, height: 150)) }
     private var keyTimes: [Date] = [], moodLevel = 0
-    private let stage = CALayer(), plate = CALayer(), arms = CALayer(), bubbles = CALayer()
-    private let face = CALayer(asset: "face_sleep", origin: CGPoint(x: 400, y: 200), size: CGSize(width: 360, height: 272))
-    private let mouse = CALayer(asset: "mouse", origin: CGPoint(x: 680, y: 648), size: CGSize(width: 176, height: 136))
+    private let stage = CALayer(), plate = CALayer(), arms = CALayer(), bubbles = CALayer(), lights = CALayer(), joint = CALayer()
+    private let face = CALayer(origin: CGPoint(x: 400, y: 200), size: CGSize(width: 360, height: 272))
+    private let mouse = CALayer(origin: CGPoint(x: 680, y: 648), size: CGSize(width: 176, height: 136))
     /// 以猫自己的左右命名：猫的左手在画面右侧，兼管鼠标。
     private var left: Arm!, right: BendyArm!, mouser: Arm!
     private var buttons: [CALayer] = [], wheel: CAShapeLayer!, lastScroll = Date.distantPast
@@ -205,8 +207,9 @@ final class CatView: NSView {
     private var lastActivity = Date(), lastKey = Date(), lastMouseUpdate = Date.distantPast
     private var nextBlink = Date(), nextWag = Date(), nextZ = Date()
 
-    init(preview: Bool = false) {
+    init(preview: Bool = false, look: Look = Look()) {
         isPreview = preview
+        self.look = look
         super.init(frame: .zero)
         wantsLayer = true
         layer!.addSublayer(stage)
@@ -236,17 +239,7 @@ final class CatView: NSView {
         buildMood()
         stage.addSublayer(face)
 
-        for key in Keyboard.keys.values {
-            let path = CGMutablePath(), h = key.half, d = CGVector(dx: 8, dy: 7)  // d 为键深方向的一半
-            let w = 1 - 5 / hypot(h.dx, h.dy)
-            path.addLines(between: [(1, 1), (1, -1), (-1, -1), (-1, 1)].map { (a: CGFloat, b: CGFloat) in
-                CGPoint(x: key.center.x + h.dx * w * a + d.dx * b, y: key.center.y + h.dy * w * a + d.dy * b)
-            })
-            path.closeSubpath()
-            let shape = stage.add(path, fill: glow, stroke: glow, width: 5)
-            shape.opacity = 0
-            glows[key.code] = shape
-        }
+        stage.addSublayer(lights)
 
         mouse.shadowOpacity = 0.22
         mouse.shadowRadius = 5
@@ -254,7 +247,7 @@ final class CatView: NSView {
         stage.addSublayer(mouse)
 
         stage.addSublayer(arms)
-        buildJoint()
+        arms.addSublayer(joint)
         right = BendyArm("arm_right", in: arms)
         left = Arm("arm_left", shoulder: Scene.at(815, 572), length: 233, in: arms)
         mouser = Arm("arm_mouse", shoulder: Scene.at(804, 560), length: 151, in: arms)
@@ -267,28 +260,53 @@ final class CatView: NSView {
         stage.addSublayer(bubbles)
     }
 
-    /// 换上当前皮肤的图。
+    /// 换上当前装扮的图。
     private func dress() {
-        images = Dictionary(uniqueKeysWithValues: [Pose.normal, .cover].map { ($0, skin.image($0.rawValue)) })
-        face.contents = skin.image("face_sleep")
-        mouse.contents = skin.image("mouse")
-        left.dress(skin)
-        right.dress(skin)
-        mouser.dress(skin)
+        releaseAll()  // 键位可能变了
+        images = Dictionary(uniqueKeysWithValues: [Pose.normal, .cover].map { ($0, look.image($0.rawValue)) })
+        tail.contents = look.image("tail")
+        face.contents = look.image("face_sleep")
+        for (squint, name) in zip(squints, ["eyes_focus", "eyes_tense"]) { squint.contents = look.image(name) }
+        mouse.contents = look.image("mouse")
+        mouse.bounds.size = look.mouseSize
+        left.dress(look)
+        right.dress(look)
+        mouser.dress(look)
+        buildLights()
+        buildJoint()
         buildButtons()
         setPose(secure ? .cover : .normal)
         hitMap = makeHitMap()
     }
 
+    /// 键帽亮光，平时透明。
+    private func buildLights() {
+        lights.sublayers?.forEach { $0.removeFromSuperlayer() }
+        glows = [:]
+        for key in Keyboard.keys.values {
+            let path = CGMutablePath(), h = key.half, d = CGVector(dx: 8, dy: 7)  // d 为键深方向的一半
+            let w = 1 - 5 / hypot(h.dx, h.dy)
+            path.addLines(between: [(1, 1), (1, -1), (-1, -1), (-1, 1)].map { (a: CGFloat, b: CGFloat) in
+                CGPoint(x: key.center.x + h.dx * w * a + d.dx * b, y: key.center.y + h.dy * w * a + d.dy * b)
+            })
+            path.closeSubpath()
+            let shape = lights.add(path, fill: glow, stroke: glow, width: 5)
+            shape.opacity = 0
+            glows[key.code] = shape
+        }
+    }
+
     /// 右肩外侧的圆弧，手臂内收时补住轮廓。
     private func buildJoint() {
+        joint.sublayers?.forEach { $0.removeFromSuperlayer() }
         let center = Scene.at(450, 531), arc = CGMutablePath(), pie = CGMutablePath()
         arc.addArc(center: center, radius: 41, startAngle: .pi * 0.62, endAngle: .pi * 1.05, clockwise: false)
         pie.move(to: center)
         pie.addArc(center: center, radius: 41, startAngle: .pi * 0.62, endAngle: .pi * 1.05, clockwise: false)
         pie.closeSubpath()
-        arms.add(pie, fill: NSColor(0xB59B70))
-        arms.add(arc, stroke: NSColor(0x3B2418), width: 6)
+        guard look.joint.count == 2 else { return }
+        joint.add(pie, fill: NSColor(look.joint[0]))
+        joint.add(arc, stroke: NSColor(look.joint[1]), width: 6)
     }
 
     private func setPose(_ pose: Pose) {
@@ -304,22 +322,37 @@ final class CatView: NSView {
 
     /// 左右键高亮、火花与滚轮，坐标取自鼠标素材（左上原点）。
     private func buildButtons() {
-        func shape(_ p: Skin.Outline, closed: Bool = true) -> CGPath {
+        func shape(_ p: [CGPoint], closed: Bool = true) -> CGPath {
             let path = CGMutablePath()
-            path.addLines(between: p.map { CGPoint(x: $0.0, y: mouse.bounds.height - $0.1) })
+            path.addLines(between: p.map { CGPoint(x: $0.x, y: mouse.bounds.height - $0.y) })
             if closed { path.closeSubpath() }
             return path
         }
         mouse.sublayers?.forEach { $0.removeFromSuperlayer() }
-        let parts = skin.mouseParts
-        let rays: [[Skin.Outline]] = [
-            [[(44, 140), (36, 164)], [(78, 140), (80, 168)], [(110, 132), (124, 155)]],
-            [[(2, 70), (-22, 62)], [(-2, 96), (-28, 102)], [(12, 122), (-8, 142)]],
+        let parts = look.buttons
+        // 火花从原版按键的位置向外，按键大小变了就跟着缩放
+        func rays(_ sparks: [[Double]], from old: [CGPoint], to new: [CGPoint]) -> [CGPath] {
+            func box(_ p: [CGPoint]) -> CGRect { p.reduce(CGRect(origin: p[0], size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) } }
+            let a = box(old), b = box(new)
+            return sparks.map { shape(Cutter.pts($0).map { CGPoint(x: $0.x + b.midX - a.midX, y: $0.y + b.midY - a.midY) }, closed: false) }
+        }
+        let classic = Look.classicButtons
+        let sparks = [
+            rays([[44,140, 36,164], [78,140, 80,168], [110,132, 124,155]], from: classic.left, to: parts.left),
+            rays([[2,70, -22,62], [-2,96, -28,102], [12,122, -8,142]], from: classic.right, to: parts.right),
         ]
-        buttons = zip([parts.left, parts.right], rays).map { area, ray in
-            let button = CALayer()
-            button.add(shape(area), fill: glow.withAlphaComponent(0.85))
-            ray.forEach { button.add(shape($0, closed: false), stroke: spark, width: 10) }
+        buttons = zip([parts.left, parts.right], sparks).map { area, rays in
+            let button = CALayer(), lit = CALayer()
+            lit.frame = mouse.bounds
+            lit.add(shape(area), fill: glow.withAlphaComponent(0.85))
+            button.addSublayer(lit)
+            if !look.images.isEmpty {  // 亮区不超出鼠标
+                let clip = CALayer()
+                clip.frame = mouse.bounds
+                clip.contents = mouse.contents
+                lit.mask = clip
+            }
+            rays.forEach { button.add($0, stroke: spark, width: 10) }
             button.opacity = 0
             mouse.addSublayer(button)
             return button
@@ -422,9 +455,9 @@ final class CatView: NSView {
     }
 
     /// 字母区各键的位置，按手分组。
-    private static let tapSpots: [Hand: [CGPoint]] = Dictionary(
+    private static var tapSpots: [Hand: [CGPoint]] { Dictionary(
         grouping: Keyboard.keys.values.filter { $0.label.count == 1 && $0.label.first!.isLetter && $0.label.first!.isASCII }, by: \.hand
-    ).mapValues { $0.map(\.center) }
+    ).mapValues { $0.map(\.center) } }
 
     private func release(_ code: UInt16) {
         guard let i = held.firstIndex(of: code), let key = Keyboard.key(code) else { return }

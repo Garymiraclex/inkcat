@@ -8,7 +8,7 @@ private struct Preview: NSViewRepresentable {
 
 /// 逐个播放动作；新的播放会打断旧的。
 private final class Player: ObservableObject {
-    let cat = CatView(preview: true)
+    let cat = CatView(preview: true, look: Wardrobe.shared.look)
     @Published private(set) var current: Demo?
     private var task: Task<Void, Never>?
 
@@ -34,9 +34,12 @@ private final class Player: ObservableObject {
 }
 
 private struct SettingsView: View {
+    private enum Tab { case look, moves }
+
     @ObservedObject var player: Player
-    let onPrivacyChange: () -> Void, onSkinChange: (Skin) -> Void
-    @AppStorage("skin") private var skin = Skin.classic
+    let onPrivacyChange: () -> Void
+    @State private var tab = Tab.look
+    @State private var adjusting: Slot?
     @AppStorage("privacy") private var privacy = true
     @AppStorage("tail") private var tail = true
     @AppStorage("mood") private var mood = true
@@ -73,15 +76,22 @@ private struct SettingsView: View {
         .padding(.vertical, 2)
     }
 
+    private var hint: String {
+        if let demo = player.current { return "正在演示：\(demo.rawValue)" }
+        if let adjusting, tab == .look { return "在图上拖动可以移动\(adjusting.title)" }
+        return tab == .look ? "换好后可以点下面的按钮看动作" : "点右侧 ▶ 查看单个动作"
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 12) {
                 Preview(cat: player.cat)
                     .frame(width: 390, height: 291)
+                    .overlay { if let adjusting, tab == .look { Dragger(slot: adjusting) } }
                     .background(LinearGradient(colors: [Color(red: 0.80, green: 0.87, blue: 0.91), Color(red: 0.93, green: 0.90, blue: 0.84)],
                                                startPoint: .top, endPoint: .bottom))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                Text(player.current.map { "正在演示：\($0.rawValue)" } ?? "点右侧 ▶ 查看单个动作").foregroundColor(.secondary)
+                Text(hint).foregroundColor(.secondary)
                 HStack {
                     Button("演示新动作") { player.play(Demo.added) }
                     Button("全部演示") { player.play(Demo.allCases) }
@@ -91,10 +101,6 @@ private struct SettingsView: View {
                 Toggle("隐私模式（不读取按键）", isOn: $privacy).toggleStyle(.switch).controlSize(.small)
                 Text(privacy ? "只感知敲击次数和节奏" : "按了什么键会显示在屏幕上（需「输入监控」权限）")
                     .font(.caption).foregroundColor(privacy ? .secondary : .orange).fixedSize()
-                Picker("外观", selection: $skin) {
-                    ForEach(Skin.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .frame(width: 220)
                 Picker("表情灵敏度", selection: $moodScale) {
                     Text("灵敏").tag(0.7)
                     Text("普通").tag(1.0)
@@ -112,31 +118,38 @@ private struct SettingsView: View {
             }
             .padding(16)
             Divider()
-            List {
-                Section("新增动作") { ForEach(Demo.added, content: row) }
-                Section("原有动作") { ForEach(Demo.original, content: row) }
+            VStack(spacing: 0) {
+                Picker("", selection: $tab) {
+                    Text("外观").tag(Tab.look)
+                    Text("动作").tag(Tab.moves)
+                }
+                .pickerStyle(.segmented).labelsHidden().padding(10)
+                if tab == .look {
+                    LookPane(adjusting: $adjusting)
+                } else {
+                    List {
+                        Section("新增动作") { ForEach(Demo.added, content: row) }
+                        Section("原有动作") { ForEach(Demo.original, content: row) }
+                    }
+                }
             }
             .frame(width: 330)
         }
         .frame(height: 570)
         .onChange(of: privacy) { _ in onPrivacyChange() }
-        .onChange(of: skin) {
-            player.cat.skin = $0
-            onSkinChange($0)
-        }
     }
 }
 
 final class SettingsWindow {
-    private let player = Player(), onPrivacyChange: () -> Void, onSkinChange: (Skin) -> Void
+    private let player = Player(), onPrivacyChange: () -> Void
 
-    init(onPrivacyChange: @escaping () -> Void, onSkinChange: @escaping (Skin) -> Void) {
+    init(onPrivacyChange: @escaping () -> Void) {
         self.onPrivacyChange = onPrivacyChange
-        self.onSkinChange = onSkinChange
+        Wardrobe.shared.onChange.append { [player] in player.cat.look = $0 }
     }
 
     private lazy var window: NSWindow = {
-        let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(player: player, onPrivacyChange: onPrivacyChange, onSkinChange: onSkinChange)))
+        let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(player: player, onPrivacyChange: onPrivacyChange)))
         w.title = "墨团 · 设置与演示"
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false

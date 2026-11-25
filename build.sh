@@ -5,7 +5,9 @@ cd "${0:A:h}"
 rm -rf InkCat.app
 mkdir -p InkCat.app/Contents/{MacOS,Resources}
 cp Info.plist InkCat.app/Contents/
-cp -R Assets/*.png Assets/gamer InkCat.app/Contents/Resources/
+cp -R Assets/*.png Assets/packs InkCat.app/Contents/Resources/
+cp docs/素材说明.txt InkCat.app/Contents/Resources/
+for f in idle type_both sleep cover_eyes; do cp art/frames/$f.png InkCat.app/Contents/Resources/packs/classic/; done
 rm InkCat.app/Contents/Resources/icon.png
 
 iconset=$(mktemp -d)/AppIcon.iconset
