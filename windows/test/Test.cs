@@ -175,7 +175,8 @@ namespace InkCat
 
         static void Live(string exe)
         {
-            foreach (var (key, value) in new[] { ("tail", false), ("bubbles", true) }) Prefs.Set(key, value);  // 尾巴会干扰截图对比
+            Prefs.Set("tail", false);  // 尾巴会干扰截图对比
+            Prefs.Set("bubbles", true);
             Prefs.Set("privacy", true);
 
             // 一个自己的窗口接住模拟的输入
@@ -194,14 +195,95 @@ namespace InkCat
             Wait(0.3);
             mouse_event(2 | 4, 0, 0, 0, IntPtr.Zero);
 
-            var process = Process.Start(exe);
-            try { Drive(process, target, box, secret, native); }
-            finally { if (!process.HasExited) process.Kill(); }
+            void Run(Action<Process> body)
+            {
+                var process = Process.Start(exe);
+                try { Wait(4); body(process); }
+                finally { if (!process.HasExited) process.Kill(); Wait(1); }
+            }
+            Run(p => Drive(p, target, box, secret, native));
+            Run(p => Handle(exe));
+
+            Prefs.Set("scale", 1.5);
+            Prefs.Set("locked", true);
+            Run(p =>
+            {
+                var r = Where();
+                Check(r.Width == 450 && r.Height == 336, $"150% 大小 {r.Width}×{r.Height}");
+                Check(r.Left == Prefs.Get("x", 0) && r.Top == Prefs.Get("y", 0), "重开后位置不变");
+                Check(Owner(r, 0.45, 0.45) != Cat, "锁定后点击穿透");
+                Screen("live_150");
+            });
+            Prefs.Set("scale", 1.0);
+            Prefs.Set("locked", false);
+            Prefs.Set("x", 99999);
+            Run(p => Check(Where().Right <= 1024 && Where().Left > 0, "保存的位置在屏幕外时回到右下角"));
+        }
+
+        static IntPtr Cat => FindWindow(null, "墨团");
+        static Native.RECT Where() { Native.GetWindowRect(Cat, out var r); return r; }
+        static IntPtr Owner(Native.RECT r, double x, double y) =>
+            GetAncestor(WindowFromPoint(new Native.POINT { X = r.Left + (int)(r.Width * x), Y = r.Top + (int)(r.Height * y) }), 2);
+
+        static void Click(int x, int y, int down, int up)
+        {
+            SetCursorPos(x, y);
+            Wait(0.3);
+            mouse_event(down, 0, 0, 0, IntPtr.Zero);
+            Wait(0.2);
+            mouse_event(up, 0, 0, 0, IntPtr.Zero);
+            Wait(0.8);
+        }
+
+        /// <summary>拖动、右键菜单、重复启动、浏览器密码框。</summary>
+        static void Handle(string exe)
+        {
+            var r = Where();
+            int x = r.Left + 135, y = r.Top + 100;
+            SetCursorPos(x, y);
+            Wait(0.3);
+            mouse_event(2, 0, 0, 0, IntPtr.Zero);
+            for (int i = 1; i <= 10; i++) { SetCursorPos(x - 12 * i, y - 5 * i); Wait(0.03); }
+            mouse_event(4, 0, 0, 0, IntPtr.Zero);
+            Wait(0.5);
+            var moved = Where();
+            Check(moved.Left == r.Left - 120 && moved.Top == r.Top - 50, $"拖动 {moved.Left - r.Left},{moved.Top - r.Top}");
+            Check(Prefs.Get("x", 0) == moved.Left && Prefs.Get("y", 0) == moved.Top, "位置已保存");
+            Check(Native.GetForegroundWindow() != Cat, "拖动不抢焦点");
+
+            Click(moved.Left + 135, moved.Top + 100, 8, 16);
+            Screen("live_menu");
+            Click(400, 330, 2, 4);
+            Screen("live_menu_closed");
+
+            var second = Process.Start(exe);
+            Check(second.WaitForExit(5000), "重复启动时第二个自己退出");
+
+            // 浏览器里的密码框
+            string edge = @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe";
+            if (!File.Exists(edge)) { Console.WriteLine("       没有 Edge，跳过"); return; }
+            string page = Path.GetFullPath(Path.Combine(output, "page.html"));
+            File.WriteAllText(page, "<title>page</title><body style='background:#cde'><input id=a autofocus><p><input id=b type=password><script>setTimeout(()=>b.focus(),9000);setTimeout(()=>a.focus(),14000)</script>");
+            string profile = Path.Combine(Path.GetTempPath(), "edge-test");
+            var before = Screen("live_edge_before");
+            Process.Start(edge, $"--no-first-run --no-default-browser-check --user-data-dir=\"{profile}\" --window-position=0,0 --window-size=500,400 --app=\"file:///{page.Replace('\\', '/')}\"");
+            Prefs.Set("privacy", false);
+            Wait(8);
+            var text = Screen("live_edge_text");
+            Wait(4.5);
+            var password = Screen("live_edge_password");
+            Wait(5);
+            var again = Screen("live_edge_text2");
+            r = Where();
+            Console.WriteLine($"       Edge：普通框 {Difference(before, text, r)}，密码框 {Difference(text, password, r)}，回到普通框 {Difference(text, again, r)}");
+            Check(Difference(text, password, r) > 1500 && Difference(text, again, r) < 600, "Edge 密码框捂眼、离开后恢复");
+            foreach (var p in Process.GetProcessesByName("msedge")) try { p.Kill(); } catch (Exception) { }
+            Prefs.Set("privacy", true);
+            Wait(1);
         }
 
         static void Drive(Process process, Window target, System.Windows.Controls.TextBox box, System.Windows.Controls.PasswordBox secret, System.Windows.Forms.TextBox native)
         {
-            Wait(4);
             if (process.HasExited)
                 foreach (var entry in new EventLog("Application").Entries.Cast<EventLogEntry>().Reverse().Where(x => x.Source == ".NET Runtime").Take(1)) Console.WriteLine(entry.Message);
             var cat = FindWindow(null, "墨团");
@@ -210,9 +292,8 @@ namespace InkCat
             Console.WriteLine($"       位置 {r.Left},{r.Top} {r.Width}×{r.Height}，屏幕 {System.Windows.Forms.Screen.PrimaryScreen.Bounds}");
 
             // 点击穿透：左上角透明处不归猫，身体中间归猫
-            IntPtr Owner(double x, double y) => GetAncestor(WindowFromPoint(new Native.POINT { X = r.Left + (int)(r.Width * x), Y = r.Top + (int)(r.Height * y) }), 2);
-            Check(Owner(0.04, 0.04) != cat, "透明处点击穿透");
-            Check(Owner(0.45, 0.45) == cat, "身体可以点到");
+            Check(Owner(r, 0.04, 0.04) != cat, "透明处点击穿透");
+            Check(Owner(r, 0.45, 0.45) == cat, "身体可以点到");
 
             target.Activate();
             box.Focus();
@@ -257,7 +338,6 @@ namespace InkCat
             secret.Focus();
             Wait(1.2);
             var covered = Screen("live_password_wpf");
-            int eyes = Difference(Screen("live_after"), covered, r);
             var openEyes = new Bitmap(Path.Combine(output, "live_letter_before.png"));
             Check(Difference(openEyes, covered, r) > 1500, $"辅助功能识别的密码框捂眼（变化 {Difference(openEyes, covered, r)} 点）");
             int leak = Change(() => Press(0x21, true), () => Press(0x21, false), "live_password_key");

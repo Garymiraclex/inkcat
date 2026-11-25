@@ -100,7 +100,11 @@ namespace InkCat
         ImageSource shoulder;  // 内收时盖住根部的肩头
         bool tucked;
 
-        public BendyArm(string asset) => this.asset = asset;
+        public BendyArm(string asset)
+        {
+            this.asset = asset;
+            RenderOptions.SetEdgeMode(this, EdgeMode.Aliased);  // 切片边缘若半透明，叠起来会透出网纹；轮廓的平滑来自图片本身
+        }
 
         // 上下各多取半片，避免弯曲处露缝
         static double Top(int i) => Math.Max(0, i - 0.5);
