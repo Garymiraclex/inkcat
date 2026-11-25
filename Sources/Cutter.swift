@@ -310,7 +310,12 @@ enum Cutter {
             }
             if resting {  // 根部的上沿原本藏在毛里，顺着露出的部分补到肩
                 func edge(_ y: Int) -> Int { (0..<o.w).first { o[$0, y].w > 0.5 * Float(min(1, CGFloat(y) / 20)) } ?? o.w }
-                let from = (45..<80).min { edge($0) < edge($1) }!, x0 = edge(from), ink = SIMD4<Float>(0x3B, 0x24, 0x18, 255) / 255
+                let from = (45..<80).min { edge($0) < edge($1) }!, x0 = edge(from)
+                // 描边色取露出部分的外沿
+                var rim: [SIMD4<Float>] = []
+                for y in from..<from + 40 { for x in edge(y)..<min(edge(y) + 6, o.w) where o[x, y].w > 0.95 { rim.append(o[x, y]) } }
+                rim.sort { luma($0) < luma($1) }
+                let ink = rim.isEmpty ? SIMD4<Float>(0x3B, 0x24, 0x18, 255) / 255 : rim[rim.count / 6]
                 var tones: [SIMD4<Float>] = []
                 for y in 25..<90 { for x in 50..<90 where o[x, y].w > 0.95 { tones.append(o[x, y]) } }
                 tones.sort { luma($0) < luma($1) }

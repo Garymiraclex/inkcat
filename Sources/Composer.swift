@@ -146,7 +146,7 @@ final class Composer {
     private func cook(_ pack: Pack, template: Pack, warn: (String) -> Void) throws -> CookedCat {
         let data = try Slot.cat.files.map { try Library.read(pack.file($0)) }
         var hash = SHA256()
-        hash.update(data: Data("9".utf8))  // 拆图算法变了就加一
+        hash.update(data: Data("10".utf8))  // 拆图算法变了就加一
         data.forEach { hash.update(data: $0) }
         let key = hash.finalize().map { String(format: "%02x", $0) }.joined()
         let cached = Library.cache.appendingPathComponent(key, isDirectory: true)

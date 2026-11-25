@@ -54,6 +54,9 @@ struct LookPane: View {
                 .disabled(slot == .cat || wardrobe.pack(slot) == nil)
                 .opacity(slot == .cat ? 0 : 1)
             }
+            if slot == .cat, wardrobe.packs(for: .cat).count == 1, wardrobe.problems[.cat] == nil {
+                note("现在只有一只猫，把新猫的文件夹放进素材文件夹就能选", .secondary)
+            }
             if let problem = wardrobe.problems[slot] {
                 note(problem, .red)
             } else if let warning = wardrobe.warnings[slot] {
