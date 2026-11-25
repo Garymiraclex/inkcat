@@ -109,14 +109,15 @@ namespace InkCat
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
-            if (!IsMouseCaptured) return;
-            var p = Cursor;
-            MoveTo(p.X - grab.X, p.Y - grab.Y);
+            if (IsMouseCaptured) Drag();
         }
+
+        void Drag() => MoveTo(Cursor.X - grab.X, Cursor.Y - grab.Y);
 
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
         {
             if (!IsMouseCaptured) return;
+            Drag();  // 松手前的最后一段可能还没收到
             ReleaseMouseCapture();
             SavePosition();
         }

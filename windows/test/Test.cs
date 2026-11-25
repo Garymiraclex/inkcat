@@ -332,13 +332,13 @@ namespace InkCat
             Wait(1);
             int letter = Change(() => Press(0x21, true), () => Press(0x21, false), "live_letter");
             Check(letter > 600, $"读取按键：F 亮起（变化 {letter} 点）");
-            Wait(0.6);
+            Wait(1.5);
+            var openEyes = Screen("live_typed");
 
             // 密码框：猫捂眼；捂眼期间按键无反应
             secret.Focus();
             Wait(1.2);
             var covered = Screen("live_password_wpf");
-            var openEyes = new Bitmap(Path.Combine(output, "live_letter_before.png"));
             Check(Difference(openEyes, covered, r) > 1500, $"辅助功能识别的密码框捂眼（变化 {Difference(openEyes, covered, r)} 点）");
             int leak = Change(() => Press(0x21, true), () => Press(0x21, false), "live_password_key");
             Check(leak < 300, $"密码框里按键不显示（变化 {leak} 点）");

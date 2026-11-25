@@ -12,7 +12,7 @@ namespace InkCat
     sealed class App : Application
     {
         readonly Forms.NotifyIcon tray = new Forms.NotifyIcon();
-        readonly Forms.ContextMenuStrip menu = new Forms.ContextMenuStrip();
+        readonly Forms.ContextMenuStrip menu = new Forms.ContextMenuStrip { Font = new Font("Microsoft YaHei UI", 9) };
         RawInput input;
         CatWindow window;
         KeyCounter counter;
