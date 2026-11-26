@@ -165,9 +165,9 @@ namespace InkCat
             Frames(fat, f => f);
             foreach (string f in Slot.Cat.Files())
             {
-                var r = Library.Decode(File.ReadAllBytes(Path.Combine(fat, f + ".png")), f);
-                for (int y = 420; y < 600; y++) for (int x = 880; x < 905; x++) if (r[x - 20, y].W > 0.9f) r[x, y] = r[x - 20, y];
-                using (var file = File.Create(Path.Combine(fat, f + ".png"))) new PngBitmapEncoder { Frames = { BitmapFrame.Create(r.Image) } }.Save(file);
+                var fr = Library.Decode(File.ReadAllBytes(Path.Combine(fat, f + ".png")), f);
+                for (int y = 420; y < 600; y++) for (int x = 880; x < 905; x++) if (fr[x - 20, y].W > 0.9f) fr[x, y] = fr[x - 20, y];
+                using (var file = File.Create(Path.Combine(fat, f + ".png"))) new PngBitmapEncoder { Frames = { BitmapFrame.Create(fr.Image) } }.Save(file);
             }
             var fatCat = Library.Scan().First(x => x.Id == "user/胖背");
             var ff = Slot.Cat.Files().Select(fatCat.Image).ToArray();
