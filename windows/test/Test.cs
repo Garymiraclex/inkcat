@@ -166,7 +166,13 @@ namespace InkCat
             foreach (string f in Slot.Cat.Files())
             {
                 var fr = Library.Decode(File.ReadAllBytes(Path.Combine(fat, f + ".png")), f);
-                for (int y = 420; y < 600; y++) for (int x = 880; x < 905; x++) if (fr[x - 20, y].W > 0.9f) fr[x, y] = fr[x - 20, y];
+                for (int y = 420; y < 580; y++)  // 每行在后背外沿再画 12 像素，不碰到尾巴
+                {
+                    int e = 820;
+                    while (fr[e, y].W > 0.3f) e++;
+                    bool clear = Enumerable.Range(e, 20).All(x => fr[x, y].W < 0.1f);
+                    if (clear) for (int x = e; x < e + 12; x++) fr[x, y] = fr[e - 4, y];
+                }
                 using (var file = File.Create(Path.Combine(fat, f + ".png"))) new PngBitmapEncoder { Frames = { BitmapFrame.Create(fr.Image) } }.Save(file);
             }
             var fatCat = Library.Scan().First(x => x.Id == "user/胖背");
@@ -174,7 +180,12 @@ namespace InkCat
             var fc = new Cutter.Cat(ff[0], ff[1], ff[3], ff[2]);
             var tail = fc.Tail;
             int leak = 0;
-            for (int y = 430; y < 590; y++) for (int x = 880; x < 905; x++) if (tail[x, y].W > 0.5f) leak++;
+            for (int y = 430; y < 570; y++)
+            {
+                int e = 820;
+                while (ff[0][e, y].W > 0.3f) e++;  // 加宽后的后背外沿
+                for (int x = 820; x < e - 1; x++) if (tail[x, y].W > 0.5f) leak++;
+            }
             Check(leak == 0, $"后背更胖时尾巴不带后背（漏 {leak} 点）");
 
             // no_arms：给出无臂身体时也能拆
