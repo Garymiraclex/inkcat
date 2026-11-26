@@ -14,13 +14,14 @@ extension Cutter {
 
         // ———— 原版：十四张成品图 ————
 
-        let cat = Cat(idle: load("frames/idle"), typing: load("frames/type_both"), cover: load("frames/cover_eyes"), sleep: load("frames/sleep"))
+        var cat = Cat(idle: load("frames/idle"), typing: load("frames/type_both"), cover: load("frames/cover_eyes"), sleep: load("frames/sleep"))
+        cat.adaptive = false  // 原版只按模板拆，保证与之前一致
         let wider = P(x: 84, y: 20)
         var desk = mask(pts([670,640, 915,640, 915,870, 670,870]), smooth: false)
         for y in 640..<H { for x in 660..<W where Double(y) <= 0.195 * Double(x - 840) + 656 { desk[y * W + x] = 0 } }
         let hole = mask(mouseHole)
-        let plate = tailless(widenPad(inpaint(mix(cat.armless(cat.idle), cat.cover, desk), hole), by: wider))
-        let plateCover = tailless(widenPad(inpaint(trim(cat.cover), hole), by: wider))
+        let plate = tailless(widenPad(inpaint(mix(cat.armless(cat.idle), cat.cover, desk), hole), by: wider), back: cat.back)
+        let plateCover = tailless(widenPad(inpaint(trim(cat.cover), hole), by: wider), back: cat.back)
         save(plate.cg, "plate")
         save(plateCover.cg, "plate_cover")
         save(crop(cat.squint(0.38, tilt: -0.02), 400, 250, 290, 150), "eyes_focus")
@@ -74,7 +75,7 @@ extension Cutter {
         let cup = mask(pts(rim + [701,345, 706,368, 714,385, 725,397, 740,403, 760,404, 780,400, 797,389]), blur: 1)
         var back = Raster()
         for y in 0..<420 { for x in 360..<850 { back[x, y] = worn[x, y] * (1 - cat.idle[x, y].w) } }
-        part(cut(back, cup.map { 1 - $0 }), "gamer/headset_back")
+        part(completeHeadband(cut(back, cup.map { 1 - $0 })), "gamer/headset_back")
         part(cut(worn, cup), "gamer/headset")
 
         let desktop = knock(load("skins/gamer/cover_eyes"), seeds: holes)
@@ -83,6 +84,63 @@ extension Cutter {
         let empty = widenPad(inpaint(desktop, gamerHole, pad: 0.22...0.36, edge: (P(x: 740, y: 652), P(x: 870, y: 674)), ink: SIMD4(0.13, 0.11, 0.09, 1)), by: P(x: 108, y: 26))
         split(empty, grow: 2, pad: 0.22...0.36, to: "gamer")
         part(cut(desktop, mask(gamerMouse)), "gamer/mouse")
+    }
+
+    /// 原图里头梁被狸花猫的耳朵挡住、左耳罩被脸挡住，换别的头就露出空洞：头梁按弧线接上，左耳罩补成整块。
+    static func completeHeadband(_ a: Raster) -> Raster {
+        var o = a
+        let c = P(x: 585, y: 330)
+        func at(_ deg: Double, _ r: Double) -> P { P(x: c.x + r * cos(deg * .pi / 180), y: c.y - r * sin(deg * .pi / 180)) }
+        // 每个角度上头梁的内外半径；被挡住的角度头梁会变窄或断开
+        let angles = Array(stride(from: 24.0, through: 150.0, by: 0.25))
+        var band: [(Double, Double)?] = angles.map { deg in
+            var best: (Double, Double)?, start: Double?
+            for r in stride(from: 150.0, through: 320.0, by: 0.5) {
+                let p = at(deg, r), solid = a.sample(p).w > 0.5
+                if solid, start == nil { start = r }
+                if !solid, let s = start {
+                    if r - s > (best.map { $0.1 - $0.0 } ?? 0) { best = (s, r) }
+                    start = nil
+                }
+            }
+            return best
+        }
+        let widths = band.compactMap { $0.map { $0.1 - $0.0 } }.sorted(), full = widths[widths.count * 3 / 4]
+        for i in band.indices where (band[i].map { $0.1 - $0.0 } ?? 0) < full * 0.8 { band[i] = nil }
+        let known = band.indices.filter { band[$0] != nil }
+        for i in band.indices where band[i] == nil {
+            guard let lo = known.last(where: { $0 < i }), let hi = known.first(where: { $0 > i }) else { continue }
+            let near = i - lo < hi - i ? lo : hi, t = Double(i - lo) / Double(hi - lo), (a0, b0) = band[lo]!, (a1, b1) = band[hi]!
+            let (rin, rout) = (a0 + (a1 - a0) * t, b0 + (b1 - b0) * t), (sin, sout) = band[near]!
+            for r in stride(from: rin, through: rout, by: 0.5) {
+                let u = (r - rin) / max(rout - rin, 1), v = a.sample(at(angles[near], sin + u * (sout - sin)))
+                for d in [-0.15, 0, 0.15] {
+                    let p = at(angles[i] + d, r)
+                    if o[Int(p.x), Int(p.y)].w < v.w { o[Int(p.x), Int(p.y)] = v }
+                }
+            }
+        }
+        // 左耳罩：只剩外缘一条，按椭圆补满，内侧补一道描边
+        func inCup(_ x: Double, _ y: Double, grow: Double = 0) -> Bool { pow((x - 410) / (40 + grow), 2) + pow((y - 310) / (86 + grow), 2) < 1 }
+        var gap: [Int] = [], seed = SIMD4<Float>.zero, count: Float = 0
+        for y in 220..<400 { for x in 365..<455 where inCup(Double(x) + 0.5, Double(y) + 0.5) {
+            let i = y * W + x
+            if a.px[i].w < 0.9 { gap.append(i) } else if luma(a.px[i]) > 0.55 { seed += a.px[i]; count += 1 }
+        } }
+        var fill = o
+        for i in gap { fill.px[i] = seed / max(count, 1) }
+        for _ in 0..<400 { for i in gap {
+            var t = SIMD4<Float>.zero, n: Float = 0
+            for j in [i - 1, i + 1, i - W, i + W] where inCup(Double(j % W) + 0.5, Double(j / W) + 0.5) { t += fill.px[j]; n += 1 }
+            fill.px[i] += (t / n - fill.px[i]) * 1.5
+        } }
+        let ink = SIMD4<Float>(0x3B, 0x2B, 0x22, 255) / 255
+        for i in gap {
+            let x = Double(i % W) + 0.5, y = Double(i / W) + 0.5
+            let edge = !inCup(x, y, grow: -3.2)  // 离椭圆边 3 像素内画描边
+            o.px[i] = edge ? ink : fill.px[i]
+        }
+        return o
     }
 
     /// 键盘外沿，不含后面露出的桌垫。

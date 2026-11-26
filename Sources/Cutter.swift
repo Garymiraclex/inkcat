@@ -79,6 +79,9 @@ enum Cutter {
 
     static func luma(_ v: SIMD4<Float>) -> Float { (v.x + v.y + v.z) / 3 }
 
+    /// 两点颜色差得明显。
+    static func differs(_ a: SIMD4<Float>, _ b: SIMD4<Float>) -> Bool { let d = a - b; return max(d.max(), -d.min()) > 0.16 }
+
     /// 用扩散填补挖空区域，只取亮度在 `pad` 内的桌垫作边界（忽略描边与透明处），并补上被挡住的桌垫上沿。
     static func inpaint(_ a: Raster, _ m: [Float], pad: ClosedRange<Float> = 0.62...1,
                  edge: (P, P) = (P(x: 752, y: 653), P(x: 862, y: 676)), ink: SIMD4<Float> = SIMD4(0.24, 0.16, 0.13, 1)) -> Raster {
@@ -172,17 +175,22 @@ enum Cutter {
         return o
     }
 
-    /// 尾巴所在处：身体右缘之外、桌沿线之上。
-    static func inTail(_ x: Int, _ y: Int) -> Bool {
+    /// 模板里身体右缘再往外留一点，逐行（y 280…689）。
+    static let backEdge: [Double] = (280..<690).map { y in
         let edge: [(Double, Double)] = [(280, 780), (385, 820), (440, 854), (500, 884), (550, 902), (600, 912), (660, 915), (690, 916)]
-        guard y >= 280, y < 690, Double(y) < 659 + 0.176 * Double(x - 910) else { return false }
         let i = edge.lastIndex { $0.0 <= Double(y) }!, a = edge[i], b = edge[min(i + 1, edge.count - 1)]
         let t = b.0 > a.0 ? (Double(y) - a.0) / (b.0 - a.0) : 0
-        return Double(x) > a.1 + (b.1 - a.1) * t + (y < 604 ? 16 : 6)
+        return a.1 + (b.1 - a.1) * t + (y < 604 ? 16 : 6)
     }
-    static func tailless(_ a: Raster) -> Raster {
+
+    /// 尾巴所在处：身体右缘之外、桌沿线之上。`back` 是这只猫逐行的身体右缘。
+    static func inTail(_ x: Int, _ y: Int, back: [Double] = backEdge) -> Bool {
+        guard y >= 280, y < 690, Double(y) < 659 + 0.176 * Double(x - 910) else { return false }
+        return Double(x) > back[y - 280]
+    }
+    static func tailless(_ a: Raster, back: [Double] = backEdge) -> Raster {
         var o = a
-        for y in 280..<690 { for x in 780..<1100 where inTail(x, y) { o[x, y] = .zero } }
+        for y in 280..<690 { for x in 780..<1100 where inTail(x, y, back: back) { o[x, y] = .zero } }
         return o
     }
 
@@ -204,20 +212,93 @@ enum Cutter {
     /// 四张整帧图。
     struct Cat {
         let idle: Raster, typing: Raster, cover: Raster, sleep: Raster
+        /// 这只猫逐行的身体右缘：比模板胖的，以实际轮廓为准。
+        let back: [Double]
+        /// 可选的 `no_arms.png`：拿掉两只前爪、胸口画完整的身体。没有时用捂眼那张补。
+        let bare: Raster?
+        /// 按每只猫的实际样子找手臂范围；为假时只用模板轮廓（生成内置原版时用，保证不变）。
+        var adaptive = true
 
         typealias P = Cutter.P
 
+        init(idle: Raster, typing: Raster, cover: Raster, sleep: Raster, bare: Raster? = nil) {
+            (self.idle, self.typing, self.cover, self.sleep, self.bare) = (idle, typing, cover, sleep, bare)
+            back = Self.measureBack(idle)
+        }
+
+        /// 每一行从身体里往右找，第一段透明就是后背的边；身体和尾巴连在一起的行（尾巴根部）沿用上一行。
+        static func measureBack(_ f: Raster) -> [Double] {
+            var edges = backEdge, last: Double?
+            for (i, y) in (280..<690).enumerated() {
+                let template = backEdge[i]
+                var x = Int(template) - 40
+                while x < W, f[x, y].w > 0.3 { x += 1 }
+                // 跑太远、或比上一行突然外扩很多，说明连着尾巴
+                let limit = min(template + 60, (last ?? template + 48) + 12)
+                let found = x > Int(template) - 40 && Double(x) + 2 < limit ? Double(x) + 2 : nil
+                if let found { last = found }
+                edges[i] = max(template, found ?? last ?? template)
+            }
+            return edges
+        }
+
+        /// 补身体用的底：有 `no_arms` 用它，否则用捂眼那张。
+        var reference: Raster { bare ?? cover }
+
+        /// 右臂（画面左边那只）在这一帧里的实际范围。没有 `no_arms` 时只认伸出身体轮廓的部分（捂眼图里那里是空的）；
+        /// 有 `no_arms` 时，和它颜色不同的也算。最后补上中间的洞，只留连着爪子的那一块。
+        func rightArmRegion(_ f: Raster) -> [Float] {
+            guard adaptive else { return [Float](repeating: 0, count: W * H) }
+            let zone = zip(mask(idleL, grow: 30), mask(armL, grow: 30)).map { max($0, $1) }, ref = reference
+            let x0 = 270, x1 = 520, y0 = 440, y1 = 650
+            var hit = [Bool](repeating: false, count: W * H)
+            for y in y0..<y1 { for x in x0..<x1 {
+                let i = y * W + x
+                guard zone[i] > 0, f.px[i].w > 0.3, !onDesk(x, y) else { continue }
+                hit[i] = ref.px[i].w < 0.3 || bare != nil && Cutter.differs(f.px[i], ref.px[i])
+            } }
+            for _ in 0..<2 {  // 连起来
+                let s = hit
+                for y in y0 + 1..<y1 - 1 { for x in x0 + 1..<x1 - 1 where !s[y * W + x] {
+                    let i = y * W + x
+                    if s[i - 1] || s[i + 1] || s[i - W] || s[i + W] { hit[i] = true }
+                } }
+            }
+            func inside(_ j: Int) -> Bool { let x = j % W, y = j / W; return x >= x0 && x < x1 && y >= y0 && y < y1 }
+            var outside = [Bool](repeating: false, count: W * H), queue: [Int] = []  // 从框边往里找空白，剩下的是手臂和它包住的洞
+            for y in y0..<y1 { for x in x0..<x1 where (x == x0 || x == x1 - 1 || y == y0 || y == y1 - 1) && !hit[y * W + x] { outside[y * W + x] = true; queue.append(y * W + x) } }
+            while let i = queue.popLast() {
+                for j in [i - 1, i + 1, i - W, i + W] where inside(j) && !outside[j] && !hit[j] { outside[j] = true; queue.append(j) }
+            }
+            // 只留最大的一块，去掉零碎的点
+            var label = [Int](repeating: -1, count: W * H), sizes: [Int] = []
+            for y in y0..<y1 { for x in x0..<x1 {
+                let start = y * W + x
+                guard !outside[start], label[start] < 0 else { continue }
+                var stack = [start], n = 0
+                label[start] = sizes.count
+                while let i = stack.popLast() {
+                    n += 1
+                    for j in [i - 1, i + 1, i - W, i + W] where inside(j) && !outside[j] && label[j] < 0 { label[j] = sizes.count; stack.append(j) }
+                }
+                sizes.append(n)
+            } }
+            guard let biggest = sizes.indices.max(by: { sizes[$0] < sizes[$1] }), sizes[biggest] > 400 else { return [Float](repeating: 0, count: W * H) }
+            return label.map { $0 == biggest ? 1 : 0 }
+        }
+
         /// 双臂所在处换成桌面或透明，肩根保留。
         func armless(_ f: Raster) -> Raster {
-            let mask0 = zip(mask(armL, grow: 4), mask(idleL, grow: 4)).map { max($0, $1) }
+            let arm = rightArmRegion(f), ref = reference
+            let mask0 = zip(zip(mask(armL, grow: 4), mask(idleL, grow: 4)).map { max($0, $1) }, arm).map { max($0, $1) }
             let resting = rightArmRests
-            var o = mix(f, cover, mask(armM, grow: 3, blur: 1))
-            o = mix(o, cover, mask0)
+            var o = mix(f, ref, mask(armM, grow: 3, blur: 1))
+            o = mix(o, ref, mask0)
             o = trim(o)
             for y in 440..<640 { for x in 300..<500 where mask0[y * W + x] > 0 {
-                if x < 461, y < 572 { o[x, y] = .zero }                                  // cover 里抬起的左臂
+                if x < 461, y < 572, bare == nil { o[x, y] = .zero }                     // cover 里抬起的左臂
                 if x >= 458 && y < 548 || hypot(Double(x) - 458, Double(y) - 504) < 37, !resting { o[x, y] = f[x, y] }  // 肩根保持不动
-                if resting { o[x, y] = o[x, y] * (1 - ruff[y * W + x]) + f[x, y] * ruff[y * W + x] }
+                if resting { let r = ruff[y * W + x] * (1 - arm[y * W + x]); o[x, y] = o[x, y] * (1 - r) + f[x, y] * r }
             } }
             return o
         }
@@ -245,19 +326,22 @@ enum Cutter {
         var tail: Raster {
             func area(_ f: Raster) -> Int {
                 var n = 0
-                for y in 280..<690 { for x in 780..<1100 where inTail(x, y) && f[x, y].w > 0.5 { n += 1 } }
+                for y in 280..<690 { for x in 780..<1100 where inTail(x, y, back: back) && f[x, y].w > 0.5 { n += 1 } }
                 return n
             }
             let f = area(typing) > area(idle) * 102 / 100 ? typing : idle
             var o = Raster()
-            for y in 280..<690 { for x in 780..<1100 where inTail(x, y) { o[x, y] = f[x, y] } }
+            for y in 280..<690 { for x in 780..<1100 where inTail(x, y, back: back) { o[x, y] = f[x, y] } }
             for y in 606..<666 { for x in 878..<924 { o[x, y] = o[924 + (924 - x), y] } }
             return o
         }
 
         /// 肩头：叠在右臂根部之上。一般只在内收时出现，朝手臂一侧羽化；右臂搭着的画法里是一直盖着的鬃毛。
         var shoulder: Raster {
-            if rightArmRests { return cut(idle, ruff) }
+            if rightArmRests {  // 只留毛，不带手臂
+                let arm = rightArmRegion(idle)
+                return cut(bare ?? idle, zip(ruff, arm).map { $0 * (1 - $1) })
+            }
             var o = cut(idle, mask(idleL, grow: 2))
             for y in 0..<H { for x in 0..<W where o[x, y].w > 0 {
                 o[x, y] *= Float(max(0, min(1, (50 - hypot(Double(x) - 462, Double(y) - 496)) / 14)))
@@ -299,7 +383,7 @@ enum Cutter {
             let full = resting
                 ? pts([414,499, 405,504, 390,512, 370,522, 352,533, 335,540, 324,547, 314,558, 308,570, 307,582, 310,592, 318,601, 328,609, 340,613, 352,612, 358,610, 368,612, 380,610, 392,604, 402,599, 412,594, 430,593, 450,594, 470,590, 486,588, 486,566, 470,552, 456,540, 446,526, 436,514, 424,506])
                 : pts([443,462, 428,480, 402,488, 376,500, 352,519, 337,545, 330,575, 329,598, 335,616, 349,628, 368,634, 386,630, 400,624, 411,613, 416,600, 418,588, 440,585, 470,583, 496,580, 498,540, 490,500, 462,476])
-            let src = cut(typing, mask(full))
+            let src = cut(typing, zip(mask(full), rightArmRegion(typing)).map { max($0, $1) })
             var o = Raster(width: 140, height: Int(table.last!.0))
             for y in 0..<o.h {
                 let (p, v) = bezier(table.first { $0.0 >= CGFloat(y) }!.1)
