@@ -252,12 +252,20 @@ namespace InkCat
             return dropped;
         }
 
+        /// <summary>缩成 4×4 的小块比：重存、重新采样的细微差别会被平均掉，睡觉时闭上的眼睛是成片的变化，至少有几十块。</summary>
         static bool Same(Raster a, Raster b)
         {
-            double total = 0;
-            int count = 0;
-            for (int i = 0; i < a.Pixels.Length; i += 7, count++) total += Vector4.Distance(a.Pixels[i], b.Pixels[i]);
-            return total / count * 255 < 0.6;
+            int differ = 0;
+            for (int by = 0; by < H / 4; by++)
+                for (int bx = 0; bx < W / 4; bx++)
+                {
+                    var d = Vector4.Zero;
+                    for (int y = by * 4; y < by * 4 + 4; y++)
+                        for (int x = bx * 4; x < bx * 4 + 4; x++) d += a.Pixels[y * W + x] - b.Pixels[y * W + x];
+                    d = Vector4.Abs(d) / 16 * 255;
+                    if (Math.Max(Math.Max(d.X, d.Y), Math.Max(d.Z, d.W)) > 24) differ++;
+                }
+            return differ < 12;
         }
 
         /// <summary>捂眼时鼠标那块和原版的捂眼图重合得够多。</summary>

@@ -456,6 +456,8 @@ namespace InkCat
             var twice = new Dictionary<Pose, Raster>(raw) { [Pose.TypeBoth] = raw[Pose.Idle] };
             Check(Importer.Process(twice).Problems.TryGetValue(Pose.TypeBoth, out var dup) && dup.Contains("同一张"), "同一张图放两格：" + dup);
             Check(Importer.Process(new Dictionary<Pose, Raster> { [Pose.Idle] = raw[Pose.Idle] }).Images.Count == 1, "只放一张也能整理");
+            var sleepy = new Dictionary<Pose, Raster> { [Pose.Idle] = truth[Pose.Idle], [Pose.Sleep] = truth[Pose.Sleep] };  // 睡觉那张只有眼睛不同
+            Check(!Importer.Process(sleepy).Problems.ContainsKey(Pose.Sleep), "只差眼睛的睡觉图不算重复");
             try { Importer.Load(new byte[300]); Check(false, "坏图"); } catch (Problem e) { Check(e.Message.Contains("打不开"), "坏图：" + e.Message); }
 
             // 窗口：放入、整理、预览、保存并换上
