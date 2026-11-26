@@ -159,6 +159,9 @@ namespace InkCat
             Console.WriteLine($"       有缓存时合成 {again.Elapsed.TotalSeconds:0.0}s");
             Check(Compose().Look.Images.Count == 0, "全部原版时不合成");
             Check(Library.Scan().First(x => x.Id == "user/配件").Title == "测试配件", "读取 skin.json");
+            var blue = Compose(("cat", "british_blue"), ("scarf", "user/配件"));
+            Check(Library.Scan().Count(p => p.IsBuiltin && p.Slots.Contains(Slot.Cat)) == 2 && blue.Problems.Count == 0 && blue.Look.Joint.Length == 0 && blue.Warnings.ContainsKey(Slot.Scarf), "自带英短蓝猫，身上有围巾不能再戴");
+            foreach (var i in blue.Look.Images) if (i.Key.StartsWith("plate")) Save(i.Value, "blue_" + i.Key);
         }
 
         static void Broken()

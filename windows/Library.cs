@@ -147,7 +147,7 @@ namespace InkCat
 
         public static Pack[] Scan()
         {
-            var own = new[] { Pack.Classic, "gamer" }.Select(id => Describe(new Pack { Id = id, Title = id }));
+            var own = new[] { Pack.Classic, "gamer", "british_blue" }.Select(id => Describe(new Pack { Id = id, Title = id }));
             var users = new DirectoryInfo(Folder).Exists
                 ? new DirectoryInfo(Folder).GetDirectories()
                     .Where(d => !d.Name.StartsWith("_") && !d.Name.StartsWith(".") && (d.Attributes & (FileAttributes.ReparsePoint | FileAttributes.Hidden)) == 0)
