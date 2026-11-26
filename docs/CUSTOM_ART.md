@@ -66,7 +66,7 @@
 
 ## 改内置素材
 
-`Assets/` 里的原版和两套内置素材包由原画生成：
+`Assets/` 里的原版和原版、电竞两套内置素材包由原画生成；英短蓝猫是直接放进 `Assets/packs/british_blue/` 的四张整帧图：
 
 ```bash
 swiftc -O -parse-as-library Sources/Cutter.swift art/cut.swift -o cut

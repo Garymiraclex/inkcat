@@ -75,7 +75,7 @@ enum Library {
                 return v?.isDirectory == true && v?.isSymbolicLink != true && !$0.lastPathComponent.hasPrefix("_")
             }
         }
-        let own = [Pack.classic, "gamer"].map { pack(builtin.appendingPathComponent($0, isDirectory: true), id: $0) }
+        let own = [Pack.classic, "gamer", "british_blue"].map { pack(builtin.appendingPathComponent($0, isDirectory: true), id: $0) }
         let users = folders(folder).map { pack($0, id: "user/" + $0.lastPathComponent) }
         return own + users.filter { !$0.slots.isEmpty || $0.problem != nil }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
