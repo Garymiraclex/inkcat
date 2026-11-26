@@ -196,10 +196,19 @@ enum Importer {
         return dropped
     }
 
-    private static func same(_ a: [UInt8], _ b: [UInt8]) -> Bool {
-        var total = 0
-        for i in stride(from: 0, to: a.count, by: 7) { total += abs(Int(a[i]) - Int(b[i])) }
-        return Double(total) / Double(a.count / 7) < 0.6
+    /// 缩成 4×4 的小块比：重存、重新采样的细微差别会被平均掉，睡觉时闭上的眼睛是成片的变化，至少有几十块。
+    static func same(_ a: [UInt8], _ b: [UInt8]) -> Bool {
+        let W = Cutter.W, H = Cutter.H
+        var differ = 0
+        for by in 0..<H / 4 { for bx in 0..<W / 4 {
+            var d = SIMD4<Int>.zero
+            for y in by * 4..<by * 4 + 4 { for x in bx * 4..<bx * 4 + 4 {
+                let i = (y * W + x) * 4
+                d &+= SIMD4(Int(a[i]) - Int(b[i]), Int(a[i + 1]) - Int(b[i + 1]), Int(a[i + 2]) - Int(b[i + 2]), Int(a[i + 3]) - Int(b[i + 3]))
+            } }
+            if max(d.max(), -d.min()) > 24 * 16 { differ += 1 }
+        } }
+        return differ < 12
     }
 
     /// 捂眼时鼠标那块和原版的捂眼图重合得够多。
