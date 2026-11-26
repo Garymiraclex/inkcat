@@ -93,9 +93,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var comeBack: DispatchWorkItem?
 
     private func vanish() {
-        NSAnimationContext.runAnimationGroup({ $0.duration = 0.15; panel.animator().alphaValue = 0 }) { [self] in
+        cat.vanish { [self] in
+            guard panel.isVisible else { return }  // 动画途中已从菜单隐藏
             hide()
-            panel.alphaValue = 1
             let back = DispatchWorkItem { [weak self] in self?.show() }
             comeBack = back
             DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: back)
@@ -106,6 +106,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         comeBack?.cancel()
         comeBack = nil
         panel.orderFrontRegardless()
+        cat.appear()
         input.startMouse()
         syncListening()
     }

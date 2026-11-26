@@ -191,7 +191,7 @@ final class CatView: NSView {
     private let mood = CALayer(), blush = CALayer(), sweat = CALayer()
     private let squints = (0..<2).map { _ in CALayer(origin: CGPoint(x: 400, y: 250), size: CGSize(width: 290, height: 150)) }
     private var keyTimes: [Date] = [], moodLevel = 0
-    private let stage = CALayer(), plate = CALayer(), arms = CALayer(), bubbles = CALayer(), lights = CALayer(), joint = CALayer()
+    private let stage = CALayer(), plate = CALayer(), arms = CALayer(), bubbles = CALayer(), lights = CALayer(), joint = CALayer(), desk = CALayer(), deskPlate = CALayer()
     private let face = CALayer(origin: CGPoint(x: 400, y: 200), size: CGSize(width: 360, height: 272))
     private let mouse = CALayer(origin: CGPoint(x: 680, y: 648), size: CGSize(width: 176, height: 136))
     /// 以猫自己的左右命名：猫的左手在画面右侧，兼管鼠标。
@@ -239,12 +239,18 @@ final class CatView: NSView {
         buildMood()
         stage.addSublayer(face)
 
-        stage.addSublayer(lights)
-
+        // 桌面：平时画在底图里，躲开时才单独拿出来
+        desk.frame = plate.frame
+        deskPlate.frame = plate.frame
+        deskPlate.minificationFilter = .trilinear
+        deskPlate.isHidden = true
+        desk.addSublayer(deskPlate)
+        desk.addSublayer(lights)
         mouse.shadowOpacity = 0.22
         mouse.shadowRadius = 5
         mouse.shadowOffset = CGSize(width: 9, height: -7)
-        stage.addSublayer(mouse)
+        desk.addSublayer(mouse)
+        stage.addSublayer(desk)
 
         stage.addSublayer(arms)
         arms.addSublayer(joint)
@@ -310,7 +316,72 @@ final class CatView: NSView {
     }
 
     private func setPose(_ pose: Pose) {
-        withoutAnimation { plate.contents = images[pose]! }
+        withoutAnimation {
+            plate.contents = images[pose]!
+            deskPlate.contents = plate.contents
+        }
+    }
+
+    // MARK: 躲开
+
+    private var gone = false
+
+    /// 桌沿以下归桌面：返回桌面那一侧（below 为真）或猫那一侧的遮罩。
+    private func deskMask(below: Bool) -> CALayer {
+        let m = CAShapeLayer(), path = CGMutablePath(), far: CGFloat = below ? 900 : -10
+        path.addLines(between: [Scene.at(-10, 524.6), Scene.at(455, 599), Scene.at(455, 604.3), Scene.at(1210, 713.8), Scene.at(1210, far), Scene.at(-10, far)])
+        path.closeSubpath()
+        m.path = path
+        return m
+    }
+
+    /// 把底图拆成猫和桌面两层，桌面才能单独移动。
+    private func split(_ on: Bool) {
+        withoutAnimation {
+            deskPlate.isHidden = !on
+            deskPlate.mask = on ? deskMask(below: true) : nil
+            plate.mask = on ? deskMask(below: false) : nil
+        }
+    }
+
+    /// 躲开：键盘、桌垫、鼠标往左下滑走，猫再淡出，结束后调用 `done`。
+    func vanish(_ done: @escaping () -> Void) {
+        gone = true
+        split(true)
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.4)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeIn))
+        CATransaction.setCompletionBlock { [self] in
+            guard gone else { return }
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0.35)
+            CATransaction.setCompletionBlock { [self] in if gone { done() } }
+            stage.opacity = 0
+            CATransaction.commit()
+        }
+        desk.setAffineTransform(CGAffineTransform(translationX: -560, y: -420))
+        desk.opacity = 0
+        CATransaction.commit()
+    }
+
+    /// 回来：猫先淡入，桌面再从左下滑回来。
+    func appear() {
+        guard gone else { return }
+        gone = false
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.3)
+        CATransaction.setCompletionBlock { [self] in
+            guard !gone else { return }
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0.4)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+            CATransaction.setCompletionBlock { [self] in if !gone { split(false) } }
+            desk.setAffineTransform(.identity)
+            desk.opacity = 1
+            CATransaction.commit()
+        }
+        stage.opacity = 1
+        CATransaction.commit()
     }
 
     private func showLeftArm() {
