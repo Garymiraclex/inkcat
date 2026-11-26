@@ -88,10 +88,123 @@ private final class Arm {
     }
 }
 
-/// 短臂：素材是展平的直条（宽 140，肩在上），切成薄片沿曲线排布，肘部自然弯、爪子始终朝下。
+/// 尾巴：上段绕尾根整体转；靠近尾根的一段按高度逐渐少转，贴在桌上的部分不动，甩起来是弯的，不会被抬离桌面。
+/// 这一段每 0.5° 预先算好一张，甩尾时按角度换图。
+private final class Tail {
+    let layer = CALayer(origin: CGPoint(x: 860, y: 290), size: CGSize(width: 240, height: 400))
+    private(set) var image: NSImage?
+    private let upper = CALayer(), clip = CALayer(), lower = CALayer()
+    private var frames: [CGImage] = []
+    /// 尾根在图里的位置（左上原点）；弯曲段是它上方 130 行以下。
+    private static let root = CGPoint(x: 56, y: 362), band = 232, step = 0.5, limit = 15.0, margin = 30
+
+    static func weight(_ y: Double) -> Double {
+        let t = min(max((Double(root.y) - y) / Double(root.y - CGFloat(band)), 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
+    init() {
+        clip.frame = layer.bounds
+        let mask = CALayer()
+        mask.frame = CGRect(x: -300, y: 400 - CGFloat(Self.band), width: 840, height: 600)  // 只露出弯曲段以上
+        mask.backgroundColor = CGColor(gray: 0, alpha: 1)
+        clip.mask = mask
+        upper.frame = layer.bounds
+        upper.anchorPoint = CGPoint(x: Self.root.x / 240, y: 1 - Self.root.y / 400)
+        upper.position = CGPoint(x: Self.root.x, y: 400 - Self.root.y)
+        clip.addSublayer(upper)
+        lower.frame = CGRect(x: -CGFloat(Self.margin), y: 0, width: 240 + 2 * CGFloat(Self.margin), height: 400 - CGFloat(Self.band))
+        layer.addSublayer(clip)
+        layer.addSublayer(lower)
+    }
+
+    func dress(_ image: NSImage?) {
+        self.image = image
+        upper.contents = image
+        frames = image?.cgImage(forProposedRect: nil, context: nil, hints: nil).map(Self.bend) ?? []
+        lower.contents = frames.isEmpty ? nil : frames[frames.count / 2]
+    }
+
+    /// 弯曲段在各个角度下的样子：每个点按所在高度的转角反推回原图取色。
+    private static func bend(_ image: CGImage) -> [CGImage] {
+        let w = 240, h = 400, ow = w + 2 * margin, oh = h - band
+        var src = [UInt8](repeating: 0, count: w * h * 4)
+        CGContext(data: &src, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: Cutter.sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            .draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let rx = Double(root.x), ry = Double(root.y), weights = (0..<oh).map { weight(Double(band + $0) + 0.5) }
+        let count = Int(limit / step) * 2 + 1
+        return (0..<count).map { k in
+            let angle = (Double(k) * step - limit) * .pi / 180
+            var out = [UInt8](repeating: 0, count: ow * oh * 4)
+            for oy in 0..<oh {
+                let phi = angle * weights[oy], c = cos(phi), s = sin(phi), dy = Double(band + oy) + 0.5 - ry
+                for ox in 0..<ow {
+                    let dx = Double(ox - margin) + 0.5 - rx
+                    // 屏幕上逆时针转 phi（图里 y 向下），反推原图位置
+                    let sx = rx + dx * c - dy * s - 0.5, sy = ry + dx * s + dy * c - 0.5
+                    let x0 = Int(floor(sx)), y0 = Int(floor(sy))
+                    guard x0 >= -1, y0 >= -1, x0 < w, y0 < h else { continue }
+                    let fx = sx - Double(x0), fy = sy - Double(y0)
+                    for ch in 0..<4 {
+                        func at(_ x: Int, _ y: Int) -> Double { x < 0 || y < 0 || x >= w || y >= h ? 0 : Double(src[(y * w + x) * 4 + ch]) }
+                        let v = (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) + (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy
+                        out[(oy * ow + ox) * 4 + ch] = UInt8(min(255, v.rounded()))
+                    }
+                }
+            }
+            return CGContext(data: &out, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: ow * 4, space: Cutter.sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
+        }
+    }
+
+    private func frame(_ angle: CGFloat) -> CGImage? {
+        guard !frames.isEmpty else { return nil }
+        let k = Int(((Double(angle) * 180 / .pi + Self.limit) / Self.step).rounded())
+        return frames[min(max(k, 0), frames.count - 1)]
+    }
+
+    var isSwishing: Bool { upper.animation(forKey: "swish") != nil }
+
+    /// 尾尖的摆角（弧度，逆时针为正），在 `duration` 内均匀分布。
+    func swish(_ angles: [CGFloat], duration: CFTimeInterval) {
+        let turn = CAKeyframeAnimation(keyPath: "transform.rotation.z")
+        turn.values = angles
+        turn.duration = duration
+        upper.add(turn, forKey: "swish")
+        let n = Int(duration * 60)  // 按每秒 60 帧换图，角度和上段一样线性插值
+        let images = (0...n).map { i -> CGImage? in
+            let t = Double(i) / Double(n) * Double(angles.count - 1), a = Int(t), f = CGFloat(t - Double(a))
+            return frame(angles[a] * (1 - f) + angles[min(a + 1, angles.count - 1)] * f)
+        }
+        lower.add(Self.flip(images, duration), forKey: "swish")
+    }
+
+    func hold() {
+        let from = upper.presentation()?.value(forKeyPath: "transform.rotation.z") as? CGFloat ?? 0
+        let back = CABasicAnimation(keyPath: "transform.rotation.z")
+        back.fromValue = from
+        back.toValue = 0
+        back.duration = 0.25
+        upper.removeAnimation(forKey: "swish")
+        upper.add(back, forKey: "hold")
+        lower.removeAnimation(forKey: "swish")
+        lower.add(Self.flip((0...15).map { frame(from * CGFloat(15 - $0) / 15) }, 0.25), forKey: "hold")
+    }
+
+    private static func flip(_ images: [CGImage?], _ duration: CFTimeInterval) -> CAKeyframeAnimation {
+        let a = CAKeyframeAnimation(keyPath: "contents")
+        a.values = images.map { $0 as Any }
+        a.keyTimes = images.indices.map { NSNumber(value: Double($0) / Double(images.count)) }
+        a.calculationMode = .discrete
+        a.duration = duration
+        return a
+    }
+}
+
+/// 短臂：素材是展平的直条（原版宽 140，自己的猫宽 180，肩在上），切成薄片沿曲线排布，肘部自然弯、爪子始终朝下。
 private final class BendyArm {
     let layer = CALayer()
-    private static let width: CGFloat = 140, length: CGFloat = 175, count = 42, paw: CGFloat = 76
+    private static let length: CGFloat = 175, count = 42, paw: CGFloat = 76
+    private var width: CGFloat { images[0]?.size.width ?? 140 }
     private let asset: String
     private var images: [NSImage?] = [nil, nil]  // 外展、内收
     private var slices: [CALayer] = [], tucked = false, covered = false
@@ -167,7 +280,7 @@ private final class BendyArm {
         for (i, s) in slices.enumerated() {
             let a = place(CGFloat(i) * step), b = place(CGFloat(i + 1) * step)
             let p = on((a + b) / 2), before = on((a + b) / 2 - 9), after = on((a + b) / 2 + 9)  // 取宽一点的切线更平滑
-            s.bounds = CGRect(x: 0, y: 0, width: Self.width, height: (b - a) * s.contentsRect.height * CGFloat(Self.count))
+            s.bounds = CGRect(x: 0, y: 0, width: width, height: (b - a) * s.contentsRect.height * CGFloat(Self.count))
             s.position = p
             s.setAffineTransform(CGAffineTransform(rotationAngle: atan2(after.x - before.x, -(after.y - before.y))))
         }
@@ -187,7 +300,7 @@ final class CatView: NSView {
 
     private enum Pose: String { case normal = "plate", cover = "plate_cover" }
     private var images: [Pose: NSImage?] = [:]
-    private let tail = CALayer(origin: CGPoint(x: 860, y: 290), size: CGSize(width: 240, height: 400))
+    private let tail = Tail()
     private let mood = CALayer(), blush = CALayer(), sweat = CALayer()
     private let squints = (0..<2).map { _ in CALayer(origin: CGPoint(x: 400, y: 250), size: CGSize(width: 290, height: 150)) }
     private var keyTimes: [Date] = [], moodLevel = 0
@@ -228,10 +341,7 @@ final class CatView: NSView {
     // MARK: 搭建
 
     private func build() {
-        let root = Scene.at(916, 652)
-        tail.anchorPoint = CGPoint(x: (root.x - tail.frame.minX) / tail.frame.width, y: (root.y - tail.frame.minY) / tail.frame.height)
-        tail.position = root
-        stage.addSublayer(tail)
+        stage.addSublayer(tail.layer)
         plate.frame = CGRect(origin: .zero, size: Scene.size)
         plate.minificationFilter = .trilinear
         stage.addSublayer(plate)
@@ -270,7 +380,7 @@ final class CatView: NSView {
     private func dress() {
         releaseAll()  // 键位可能变了
         images = Dictionary(uniqueKeysWithValues: [Pose.normal, .cover].map { ($0, look.image($0.rawValue)) })
-        tail.contents = look.image("tail")
+        tail.dress(look.image("tail"))
         face.contents = look.image("face_sleep")
         for (squint, name) in zip(squints, ["eyes_focus", "eyes_tense"]) { squint.contents = look.image(name) }
         mouse.contents = look.image("mouse")
@@ -460,8 +570,8 @@ final class CatView: NSView {
             images[.normal]!?.cgImage(forProposedRect: nil, context: nil, hints: nil).map {
                 context?.draw($0, in: CGRect(x: 0, y: 0, width: w, height: h))
             }
-            (tail.contents as? NSImage)?.cgImage(forProposedRect: nil, context: nil, hints: nil).map {
-                context?.draw($0, in: tail.frame.applying(CGAffineTransform(scaleX: k, y: k)))
+            tail.image?.cgImage(forProposedRect: nil, context: nil, hints: nil).map {
+                context?.draw($0, in: tail.layer.frame.applying(CGAffineTransform(scaleX: k, y: k)))
             }
         }
         return pixels
@@ -783,26 +893,18 @@ final class CatView: NSView {
 
     /// 甩两下尾巴：主摆加一点尾尖抖动，首尾平滑。
     func swish() {
-        guard tail.animation(forKey: "swish") == nil else { return }
-        let a = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-        a.values = (0...60).map { i -> CGFloat in
+        guard !tail.isSwishing else { return }
+        tail.swish((0...60).map { i -> CGFloat in
             let t = Double(i) / 60, p = t * 4 * .pi
             return CGFloat(-(10.5 * sin(p) + 3.8 * sin(2 * p + 0.7)) * min(1, min(t, 1 - t) * 6) * .pi / 180)
-        }
-        a.duration = 3.5
-        tail.add(a, forKey: "swish")
+        }, duration: 3.5)
     }
 
     /// 一有操作就收住尾巴。
     private func holdTail() {
         nextWag = Date() + 1.5
-        guard tail.animation(forKey: "swish") != nil else { return }
-        let back = CABasicAnimation(keyPath: "transform.rotation.z")
-        back.fromValue = tail.presentation()?.value(forKeyPath: "transform.rotation.z")
-        back.toValue = 0
-        back.duration = 0.25
-        tail.removeAnimation(forKey: "swish")
-        tail.add(back, forKey: "hold")
+        guard tail.isSwishing else { return }
+        tail.hold()
     }
 
     func blink() {

@@ -147,7 +147,7 @@ final class Composer {
         let data = try Slot.cat.files.map { try Library.read(pack.file($0)) }
         let bare = FileManager.default.fileExists(atPath: pack.file("no_arms").path) ? try Library.read(pack.file("no_arms")) : nil
         var hash = SHA256()
-        hash.update(data: Data("14".utf8))  // 拆图算法变了就加一
+        hash.update(data: Data("15".utf8))  // 拆图算法变了就加一
         (data + [bare].compactMap { $0 }).forEach { hash.update(data: $0) }
         let key = hash.finalize().map { String(format: "%02x", $0) }.joined()
         let cached = Library.cache.appendingPathComponent(key, isDirectory: true)

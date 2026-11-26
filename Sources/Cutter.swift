@@ -383,12 +383,19 @@ enum Cutter {
             let full = resting
                 ? pts([414,499, 405,504, 390,512, 370,522, 352,533, 335,540, 324,547, 314,558, 308,570, 307,582, 310,592, 318,601, 328,609, 340,613, 352,612, 358,610, 368,612, 380,610, 392,604, 402,599, 412,594, 430,593, 450,594, 470,590, 486,588, 486,566, 470,552, 456,540, 446,526, 436,514, 424,506])
                 : pts([443,462, 428,480, 402,488, 376,500, 352,519, 337,545, 330,575, 329,598, 335,616, 349,628, 368,634, 386,630, 400,624, 411,613, 416,600, 418,588, 440,585, 470,583, 496,580, 498,540, 490,500, 462,476])
-            let src = cut(typing, zip(mask(full), rightArmRegion(typing)).map { max($0, $1) })
-            var o = Raster(width: 140, height: Int(table.last!.0))
+            // 爪子比模板胖时，压在键盘上的那段外沿描边会落在轮廓外：轮廓外 12 像素内、和捂眼图（键盘完整露出）不同的也算手臂
+            let inside = mask(full), rim = adaptive ? mask(full, grow: 12) : inside
+            let outline = (0..<W * H).map { i -> Float in
+                guard rim[i] > inside[i], Cutter.onDesk(i % W, i / W), Cutter.differs(typing.px[i], cover.px[i]) else { return inside[i] }
+                return rim[i]
+            }
+            let src = cut(typing, zip(outline, rightArmRegion(typing)).map { max($0, $1) })
+            let m = adaptive ? 20 : 0  // 自己的猫手臂可能更粗，直条两边各放宽 20
+            var o = Raster(width: 140 + 2 * m, height: Int(table.last!.0))
             for y in 0..<o.h {
                 let (p, v) = bezier(table.first { $0.0 >= CGFloat(y) }!.1)
                 for x in 0..<o.w {
-                    let n = CGFloat(x) - 70
+                    let n = CGFloat(x) - CGFloat(o.w) / 2
                     o[x, y] = src.sample(P(x: p.x + v.y * n, y: p.y - v.x * n)) * Float(min(1, CGFloat(y) / 20))
                 }
             }
@@ -401,12 +408,12 @@ enum Cutter {
                 rim.sort { luma($0) < luma($1) }
                 let ink = rim.isEmpty ? SIMD4<Float>(0x3B, 0x24, 0x18, 255) / 255 : rim[rim.count / 6]
                 var tones: [SIMD4<Float>] = []
-                for y in 25..<90 { for x in 50..<90 where o[x, y].w > 0.95 { tones.append(o[x, y]) } }
+                for y in 25..<90 { for x in 50 + m..<90 + m where o[x, y].w > 0.95 { tones.append(o[x, y]) } }
                 tones.sort { luma($0) < luma($1) }
                 let fur = tones.isEmpty ? ink : tones[tones.count / 2]
                 let edges = (0..<from).map(edge)
                 for y in 0..<from {
-                    let t = CGFloat(from - y) / CGFloat(from), start = CGFloat(x0) + (46 - CGFloat(x0)) * t * t, old = CGFloat(min(edges[y], 100))
+                    let t = CGFloat(from - y) / CGFloat(from), start = CGFloat(x0) + (46 + CGFloat(m) - CGFloat(x0)) * t * t, old = CGFloat(min(edges[y], 100 + m))
                     let fade = Float(min(1, CGFloat(y) / 20))
                     for x in Int(start)..<Int(max(old, start)) + 14 {
                         let d = CGFloat(x) - start, keep = Float(max(0, min(1, (CGFloat(x) - old - 4) / 10)))  // 与原有部分渐变衔接
@@ -417,7 +424,7 @@ enum Cutter {
             }
             let out = o
             for y in 0..<o.h - 74 { for x in 0..<o.w {
-                let limit = 104 + max(0, Float(y) - Float(o.h - 100)) * 0.15
+                let limit = 104 + Float(m) + max(0, Float(y) - Float(o.h - 100)) * 0.15
                 o[x, y] *= max(0, min(1, (limit - Float(x)) / 14))
             } }
             return (out, o)
