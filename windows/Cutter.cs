@@ -375,24 +375,31 @@ namespace InkCat
                     double t = i / 1000.0;
                     table.Add((table[i - 1].length + (Bezier(t).Item1 - Bezier(t - 0.001).Item1).Length, t));
                 }
-                var src = Cut(Typing, Union(RightArmRegion(Typing), Mask(RightArmRests
+                string outline = RightArmRests
                     ? "414,499 405,504 390,512 370,522 352,533 335,540 324,547 314,558 308,570 307,582 310,592 318,601 328,609 340,613 352,612 358,610 368,612 380,610 392,604 402,599 412,594 430,593 450,594 470,590 486,588 486,566 470,552 456,540 446,526 436,514 424,506"
-                    : "443,462 428,480 402,488 376,500 352,519 337,545 330,575 329,598 335,616 349,628 368,634 386,630 400,624 411,613 416,600 418,588 440,585 470,583 496,580 498,540 490,500 462,476")));
-                var o = new Raster(140, (int)table[1000].length);
+                    : "443,462 428,480 402,488 376,500 352,519 337,545 330,575 329,598 335,616 349,628 368,634 386,630 400,624 411,613 416,600 418,588 440,585 470,583 496,580 498,540 490,500 462,476";
+                // 爪子比模板胖时，压在键盘上的那段外沿描边会落在轮廓外：轮廓外 12 像素内、和捂眼图（键盘完整露出）不同的也算手臂
+                float[] inside = Mask(outline), rim = Mask(outline, grow: 12);
+                for (int i = 0; i < inside.Length; i++)
+                    if (rim[i] > inside[i] && OnDesk(i % W, i / W) && Differs(Typing.Pixels[i], Cover.Pixels[i])) inside[i] = rim[i];
+                var src = Cut(Typing, Union(RightArmRegion(Typing), inside));
+                var o = new Raster(140 + 2 * margin, (int)table[1000].length);  // 自己的猫手臂可能更粗，直条两边各放宽
                 for (int y = 0; y < o.Height; y++)
                 {
                     var (p, v) = Bezier(table.First(e => e.length >= y).t);
-                    for (int x = 0; x < o.Width; x++) o[x, y] = src.Sample(p + new Vector(v.Y, -v.X) * (x - 70)) * Unit(y / 20.0);
+                    for (int x = 0; x < o.Width; x++) o[x, y] = src.Sample(p + new Vector(v.Y, -v.X) * (x - o.Width / 2.0)) * Unit(y / 20.0);
                 }
                 if (RightArmRests) ExtendRoot(o);
                 var full = o.Copy();
                 for (int y = 0; y < o.Height - 74; y++)
                 {
-                    float limit = 104 + Math.Max(0, y - (o.Height - 100)) * 0.15f;
+                    float limit = 104 + margin + Math.Max(0, y - (o.Height - 100)) * 0.15f;
                     for (int x = 0; x < o.Width; x++) o[x, y] *= Unit((limit - x) / 14);
                 }
                 return (full, o);
             }
+
+            const int margin = 20;
 
             /// <summary>根部的上沿原本藏在毛里，顺着露出的部分补到肩。</summary>
             static void ExtendRoot(Raster o)
@@ -406,13 +413,13 @@ namespace InkCat
                 var rim = new List<Vector4>();  // 描边色取露出部分的外沿
                 for (int y = from; y < from + 40; y++) for (int x = Edge(y); x < Math.Min(Edge(y) + 6, o.Width); x++) if (o[x, y].W > 0.95f) rim.Add(o[x, y]);
                 var tones = new List<Vector4>();
-                for (int y = 25; y < 90; y++) for (int x = 50; x < 90; x++) if (o[x, y].W > 0.95f) tones.Add(o[x, y]);
+                for (int y = 25; y < 90; y++) for (int x = 50 + margin; x < 90 + margin; x++) if (o[x, y].W > 0.95f) tones.Add(o[x, y]);
                 var ink = rim.Count == 0 ? new Vector4(0x3B, 0x24, 0x18, 255) / 255 : rim.OrderBy(Luma).ElementAt(rim.Count / 6);
                 var fur = tones.Count == 0 ? ink : tones.OrderBy(Luma).ElementAt(tones.Count / 2);
                 var edges = Enumerable.Range(0, from).Select(Edge).ToArray();
                 for (int y = 0; y < from; y++)
                 {
-                    double t = (double)(from - y) / from, start = x0 + (46 - x0) * t * t, old = Math.Min(edges[y], 100);
+                    double t = (double)(from - y) / from, start = x0 + (46 + margin - x0) * t * t, old = Math.Min(edges[y], 100 + margin);
                     for (int x = (int)start; x < (int)Math.Max(old, start) + 14; x++)
                     {
                         double d = x - start;

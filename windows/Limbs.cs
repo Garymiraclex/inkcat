@@ -90,10 +90,11 @@ namespace InkCat
         }
     }
 
-    /// <summary>短臂：素材是展平的直条（宽 140，肩在上），切成薄片沿曲线排布，肘部自然弯、爪子始终朝下。</summary>
+    /// <summary>短臂：素材是展平的直条（原版宽 140，自己的猫宽 180，肩在上），切成薄片沿曲线排布，肘部自然弯、爪子始终朝下。</summary>
     sealed class BendyArm : Limb
     {
-        const double width = 140, length = 175, paw = 76;
+        const double length = 175, paw = 76;
+        double width = 140;
         const int count = 42, fields = 4;  // 每片：x、y、角度、高度
         readonly string asset;
         readonly Brush[][] bands = new Brush[2][];  // 外展、内收
@@ -113,6 +114,7 @@ namespace InkCat
         public override void Dress(Look look, double detail)
         {
             shoulder = look.Image("shoulder", detail);
+            width = look.Image(asset).PixelWidth;
             covered = look.Joint.Length == 0;
             for (int k = 0; k < 2; k++)
             {
