@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -12,6 +13,9 @@ namespace InkCat
     {
         public readonly CatView Cat = new CatView();
         public event Action MenuRequested;
+        /// <summary>在猫身上连点三下。</summary>
+        public event Action TripleClicked;
+        readonly List<(POINT at, int time)> clicks = new List<(POINT, int)>();
         IntPtr handle;
         POINT grab;
 
@@ -100,9 +104,24 @@ namespace InkCat
             Top = area.Bottom - Height - 8;
         }
 
+        /// <summary>记下一次按下；原地连点到第三下时返回真。拖动过的不算。</summary>
+        public bool CountClick(POINT p, int time)
+        {
+            if (clicks.Count > 0)
+            {
+                var (at, last) = clicks[clicks.Count - 1];
+                if (time - last > System.Windows.Forms.SystemInformation.DoubleClickTime || Math.Abs(p.X - at.X) > 4 || Math.Abs(p.Y - at.Y) > 4) clicks.Clear();
+            }
+            clicks.Add((p, time));
+            if (clicks.Count < 3) return false;
+            clicks.Clear();
+            return true;
+        }
+
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
             var (p, r) = (Cursor, Rect);
+            if (CountClick(p, e.Timestamp)) { TripleClicked?.Invoke(); return; }
             grab = new POINT { X = p.X - r.Left, Y = p.Y - r.Top };
             CaptureMouse();
         }

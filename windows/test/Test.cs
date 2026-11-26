@@ -351,6 +351,7 @@ namespace InkCat
         [DllImport("user32", CharSet = CharSet.Unicode)] static extern IntPtr FindWindow(string cls, string title);
         [DllImport("user32")] static extern IntPtr WindowFromPoint(Native.POINT p);
         [DllImport("user32")] static extern IntPtr GetAncestor(IntPtr w, int flags);
+        [DllImport("user32")] static extern bool IsWindowVisible(IntPtr w);
 
         static void Press(byte scan, bool down) => keybd_event((byte)Native.MapVirtualKey(scan, 1), scan, down ? 0 : 2, IntPtr.Zero);
 
@@ -462,6 +463,36 @@ namespace InkCat
             Screen("live_menu");
             Click(400, 330, 2, 4);
             Screen("live_menu_closed");
+
+            // 连点三下：躲开 10 秒再回来；两下、拖着点都不算
+            void Clicks(int n, int gap, int dx = 0)
+            {
+                var at = Where();
+                for (int i = 0; i < n; i++)
+                {
+                    SetCursorPos(at.Left + 135 + dx * i, at.Top + 110);
+                    mouse_event(2, 0, 0, 0, IntPtr.Zero);
+                    mouse_event(4, 0, 0, 0, IntPtr.Zero);
+                    Wait(gap / 1000.0);
+                }
+                SetCursorPos(400, 330);
+            }
+            Clicks(2, 120);
+            Wait(0.6);
+            Check(IsWindowVisible(Cat), "连点两下不躲");
+            Clicks(3, 800);
+            Wait(0.6);
+            Check(IsWindowVisible(Cat), "点得太慢不躲");
+            Clicks(3, 120);
+            Wait(0.6);
+            Check(!IsWindowVisible(Cat), "连点三下躲起来");
+            Screen("live_vanished");
+            Wait(8.5);
+            Check(!IsWindowVisible(Cat), "9 秒时还躲着");
+            var gone = Stopwatch.StartNew();
+            while (!IsWindowVisible(Cat) && gone.Elapsed.TotalSeconds < 3) Wait(0.1);
+            Check(IsWindowVisible(Cat), $"约 10 秒后回来（{9.1 + gone.Elapsed.TotalSeconds:0.0}s）");
+            Check(Where().Left == moved.Left && Where().Top == moved.Top, "回来后位置不变");
 
             var second = Process.Start(exe);
             Check(second.WaitForExit(5000), "重复启动时第二个自己退出");

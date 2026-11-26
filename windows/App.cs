@@ -37,6 +37,8 @@ namespace InkCat
             input = new RawInput();
             window = new CatWindow();
             Cat.ShowsBubbles = Prefs.Get("bubbles", false);
+            window.TripleClicked += Vanish;
+            comeBack.Tick += (s, e) => Visible = true;
             window.MenuRequested += () =>
             {
                 Native.SetForegroundWindow(new System.Windows.Interop.WindowInteropHelper(window).Handle);  // 否则点别处菜单不会收起
@@ -97,11 +99,28 @@ namespace InkCat
             SyncListening();
         }));
 
+        /// <summary>连点三下就躲开 10 秒；躲着时和隐藏一样，不监听。</summary>
+        readonly DispatcherTimer comeBack = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+
+        void Vanish()
+        {
+            var fade = new System.Windows.Media.Animation.DoubleAnimation(0, TimeSpan.FromSeconds(0.15));
+            fade.Completed += (s, e) =>
+            {
+                Visible = false;
+                window.BeginAnimation(UIElement.OpacityProperty, null);
+                window.Opacity = 1;
+                comeBack.Start();
+            };
+            window.BeginAnimation(UIElement.OpacityProperty, fade);
+        }
+
         bool Visible
         {
             get => window.IsVisible;
             set
             {
+                comeBack.Stop();
                 if (value) { window.Show(); input.StartMouse(); }
                 else { window.Hide(); input.StopMouse(); }
                 SyncListening();
@@ -148,7 +167,7 @@ namespace InkCat
 
             var items = menu.Items;
             items.Clear();
-            items.Add(new Forms.ToolStripMenuItem(!Visible ? "已隐藏：没有监听" : input.IsReadingKeys ? "正在读取按键，会显示在屏幕上" : "只感知敲击节奏，不读是哪个键") { Enabled = false });
+            items.Add(new Forms.ToolStripMenuItem(comeBack.IsEnabled ? "躲起来了，10 秒内回来；期间没有监听" : !Visible ? "已隐藏：没有监听" : input.IsReadingKeys ? "正在读取按键，会显示在屏幕上" : "只感知敲击节奏，不读是哪个键") { Enabled = false });
             items.Add(Item("隐私模式（不读取按键）", () => SetPrivacy(!Privacy), Privacy));
             items.Add(new Forms.ToolStripSeparator());
             items.Add(Item("显示小猫", () => Visible = !Visible, Visible));
