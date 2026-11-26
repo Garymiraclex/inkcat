@@ -87,15 +87,29 @@ final class Wardrobe: ObservableObject {
         return "找不到素材包「\(choice(slot).replacingOccurrences(of: "user/", with: ""))」"
     }
 
-    private func refresh() {
-        turn += 1
-        let mine = turn, fallback = packs.first { $0.id == Pack.classic }!
+    var classic: Pack { packs.first { $0.id == Pack.classic }! }
+
+    /// 每个部位穿哪个素材包；给了 `cat` 就换成这只猫（导入时预览用）。
+    func outfit(cat: Pack? = nil) -> (choices: [Slot: Composer.Choice], missing: [Slot: String]) {
         var outfit: [Slot: Composer.Choice] = [:], missing: [Slot: String] = [:]
         for slot in Slot.allCases {
             if let pack = pack(slot) { outfit[slot] = .init(pack: pack, place: place(slot)) }
             else if !choice(slot).isEmpty { missing[slot] = missingText(slot) }
-            if outfit[slot] == nil, !slot.isOptional { outfit[slot] = .init(pack: fallback, place: Place()) }
+            if outfit[slot] == nil, !slot.isOptional { outfit[slot] = .init(pack: classic, place: Place()) }
         }
+        if let cat { outfit[.cat] = .init(pack: cat, place: Place()) }
+        return (outfit, missing)
+    }
+
+    /// 刚存好的素材包：马上扫描并换上，不等文件夹监听。
+    func adopt(_ id: String) {
+        packs = Library.scan()
+        choose(.cat, id)
+    }
+
+    private func refresh() {
+        turn += 1
+        let mine = turn, fallback = classic, (outfit, missing) = outfit()
         busy = true
         queue.async { [self] in
             guard mine == DispatchQueue.main.sync(execute: { turn }) else { return }  // 连续拖动时只算最后一次

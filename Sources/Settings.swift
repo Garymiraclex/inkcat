@@ -1,16 +1,18 @@
 import SwiftUI
 
-private struct Preview: NSViewRepresentable {
+struct CatPreview: NSViewRepresentable {
     let cat: CatView
     func makeNSView(context: Context) -> CatView { cat }
     func updateNSView(_: CatView, context: Context) {}
 }
 
 /// 逐个播放动作；新的播放会打断旧的。
-private final class Player: ObservableObject {
-    let cat = CatView(preview: true, look: Wardrobe.shared.look)
+final class Player: ObservableObject {
+    let cat: CatView
     @Published private(set) var current: Demo?
     private var task: Task<Void, Never>?
+
+    init(look: Look = Wardrobe.shared.look) { cat = CatView(preview: true, look: look) }
 
     func play(_ demos: [Demo]) {
         let previous = task
@@ -85,7 +87,7 @@ private struct SettingsView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 12) {
-                Preview(cat: player.cat)
+                CatPreview(cat: player.cat)
                     .frame(width: 390, height: 291)
                     .overlay { if let adjusting, tab == .look { Dragger(slot: adjusting) } }
                     .background(LinearGradient(colors: [Color(red: 0.80, green: 0.87, blue: 0.91), Color(red: 0.93, green: 0.90, blue: 0.84)],

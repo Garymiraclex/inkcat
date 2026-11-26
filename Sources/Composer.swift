@@ -172,7 +172,7 @@ final class Composer {
     }
 
     /// 帧与帧对不齐就没法用；和模板差太多则提醒。
-    private static func check(_ frames: [Raster], template: Pack?) throws -> String {
+    static func check(_ frames: [Raster], template: Pack?) throws -> String {
         for (name, f) in zip(Slot.cat.files + ["no_arms"], frames).dropFirst() {  // 比耳朵和头顶，各帧里都不该动
             var moved = 0, total = 0
             for y in stride(from: 40, to: 240, by: 2) { for x in stride(from: 380, to: 830, by: 2) {
@@ -286,70 +286,6 @@ extension Place {
     /// 画布坐标（左下原点）里的变换，绕 `c` 缩放旋转。
     func transform(about c: CGPoint) -> CGAffineTransform {
         CGAffineTransform(translationX: c.x + x, y: c.y - y).rotated(by: -angle * .pi / 180).scaledBy(x: scale, y: scale).translatedBy(x: -c.x, y: -c.y)
-    }
-}
-
-/// 把图整理成透明底的 1200×896。
-enum Cutout {
-    static func pixels(_ image: CGImage) -> [UInt8] {
-        var b = [UInt8](repeating: 0, count: Cutter.W * Cutter.H * 4)
-        let c = CGContext(data: &b, width: Cutter.W, height: Cutter.H, bitsPerComponent: 8, bytesPerRow: Cutter.W * 4, space: Cutter.sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        c.interpolationQuality = .high
-        c.draw(image, in: Composer.canvas)
-        return b
-    }
-
-    /// 不透明区域的外框，左下原点。
-    static func bounds(_ image: CGImage) -> CGRect? {
-        let b = pixels(image), W = Cutter.W, H = Cutter.H
-        var x0 = W, x1 = -1, y0 = H, y1 = -1
-        for y in 0..<H { for x in 0..<W where b[(y * W + x) * 4 + 3] > 40 {
-            x0 = min(x0, x); x1 = max(x1, x); y0 = min(y0, y); y1 = max(y1, y)
-        } }
-        return x1 < 0 ? nil : CGRect(x: x0, y: H - 1 - y1, width: x1 - x0 + 1, height: y1 - y0 + 1)
-    }
-
-    /// 背景不透明时，四边颜色一致就从边上往里清掉，否则报错。
-    static func clean(_ image: CGImage, name: String) throws -> CGImage {
-        let W = Cutter.W, H = Cutter.H
-        var b = pixels(image)
-        var border: [Int] = []
-        for x in 0..<W { border += [x, (H - 1) * W + x] }
-        for y in 0..<H { border += [y * W, y * W + W - 1] }
-        let solid = border.filter { b[$0 * 4 + 3] > 200 }
-        if solid.count * 2 < border.count { return image.width == W && image.height == H ? image : make(&b) }
-        func color(_ i: Int) -> SIMD3<Int> { SIMD3(Int(b[i * 4]), Int(b[i * 4 + 1]), Int(b[i * 4 + 2])) }
-        func far(_ p: SIMD3<Int>, _ q: SIMD3<Int>) -> Int { let d = p &- q; return max(abs(d.x), abs(d.y), abs(d.z)) }
-        let paper = color(0)
-        guard border.allSatisfy({ far(color($0), paper) < 24 }) else { throw Problem("\(name).png 的背景不是透明的") }
-        var out = [Bool](repeating: false, count: W * H), queue = border
-        border.forEach { out[$0] = true }
-        while let i = queue.popLast() {
-            let x = i % W
-            for j in [x > 0 ? i - 1 : i, x < W - 1 ? i + 1 : i, max(i - W, 0), min(i + W, W * H - 1)] where !out[j] && far(color(j), paper) < 30 {
-                out[j] = true
-                queue.append(j)
-            }
-        }
-        let source = b
-        for y in 1..<H - 1 { for x in 1..<W - 1 {
-            let i = y * W + x
-            if out[i] { continue }
-            let open = [i - 1, i + 1, i - W, i + W].filter { out[$0] }.count  // 边缘一圈去掉底色、变半透明
-            guard open > 0 else { continue }
-            let a = max(0.35, 1 - 0.25 * Double(open))
-            for k in 0..<3 {
-                let v = Double(source[i * 4 + k]) - Double(paper[k]) * (1 - a)
-                b[i * 4 + k] = UInt8(max(0, min(255 * a, v)))
-            }
-            b[i * 4 + 3] = UInt8(255 * a)
-        } }
-        for i in 0..<W * H where out[i] { for k in 0..<4 { b[i * 4 + k] = 0 } }
-        return make(&b)
-    }
-
-    private static func make(_ b: inout [UInt8]) -> CGImage {
-        CGContext(data: &b, width: Cutter.W, height: Cutter.H, bitsPerComponent: 8, bytesPerRow: Cutter.W * 4, space: Cutter.sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
     }
 }
 

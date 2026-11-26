@@ -103,13 +103,16 @@ enum Library {
         return try Data(contentsOf: url)
     }
 
-    /// 读成 1200×896；同比例的大图会缩小。
+    /// 比例接近 1200×896（4:3 也行）就能用，画的时候居中铺满。
+    static func fits(width w: Int, height h: Int) -> Bool { w <= 4096 && h <= 4096 && w >= 600 && abs(Double(w) / Double(h) / (1200 / 896.0) - 1) < 0.03 }
+
+    /// 读图；尺寸不对就报错。
     static func image(_ data: Data, name: String) throws -> CGImage {
         if data.starts(with: [0x89, 0x50, 0x4E, 0x47]), data.suffix(12).range(of: Data("IEND".utf8)) == nil { throw Problem("\(name).png 不完整") }  // 还在复制
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let info = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let w = info[kCGImagePropertyPixelWidth] as? Int, let h = info[kCGImagePropertyPixelHeight] as? Int else { throw Problem("\(name).png 打不开") }
-        guard w <= 4096, h <= 4096, w >= 600, abs(Double(w) / Double(h) - 1200 / 896.0) < 0.004 else { throw Problem("\(name).png 是 \(w)×\(h)，需要 1200×896") }
+        guard fits(width: w, height: h) else { throw Problem("\(name).png 是 \(w)×\(h)，需要 1200×896 或 4:3") }
         guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw Problem("\(name).png 打不开") }
         return image
     }

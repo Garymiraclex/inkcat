@@ -14,6 +14,7 @@ struct LookPane: View {
                 }
                 Divider().padding(.vertical, 4)
                 HStack {
+                    Button("导入生图…") { ImportWindow.shared.show() }
                     Button("打开素材文件夹") { NSWorkspace.shared.open(Library.folder) }
                     Menu("整套换成") {
                         ForEach(wardrobe.packs.filter { !$0.slots.isEmpty }) { pack in
@@ -23,7 +24,7 @@ struct LookPane: View {
                     .fixedSize()
                     if wardrobe.busy { ProgressView().controlSize(.small) }
                 }
-                Text("把素材包拖进文件夹就会出现在上面，改图后自动更新。图怎么画，见文件夹里的「素材说明」和「_模板」。")
+                Text("用 AI 画了自己的猫，点「导入生图」把原图拖进去就行。也可以把整理好的素材包直接放进文件夹，改图后自动更新。图怎么画，见文件夹里的「素材说明」和「_模板」。")
                     .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
                 ForEach(wardrobe.packs.filter { $0.problem != nil }) { pack in
                     Text("「\(pack.title)」\(pack.problem!)").font(.caption).foregroundColor(.orange).fixedSize(horizontal: false, vertical: true)
