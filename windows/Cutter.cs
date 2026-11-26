@@ -132,21 +132,42 @@ namespace InkCat
 
         static readonly (double y, double x)[] tailEdge = { (280, 780), (385, 820), (440, 854), (500, 884), (550, 902), (600, 912), (660, 915), (690, 916) };
 
-        /// <summary>尾巴所在处：身体右缘之外、桌沿线之上。</summary>
-        static bool InTail(int x, int y)
+        /// <summary>模板里身体右缘再往外留一点，逐行（y 280…689）。</summary>
+        static readonly double[] backEdge = Enumerable.Range(280, 410).Select(y =>
         {
-            if (y < 280 || y >= 690 || y >= 659 + 0.176 * (x - 910)) return false;
             int i = Array.FindLastIndex(tailEdge, e => e.y <= y);
             var (a, b) = (tailEdge[i], tailEdge[Math.Min(i + 1, tailEdge.Length - 1)]);
             double t = b.y > a.y ? (y - a.y) / (b.y - a.y) : 0;
-            return x > a.x + (b.x - a.x) * t + (y < 604 ? 16 : 6);
-        }
+            return a.x + (b.x - a.x) * t + (y < 604 ? 16 : 6);
+        }).ToArray();
 
-        public static Raster Tailless(Raster a)
+        /// <summary>尾巴所在处：身体右缘之外、桌沿线之上。back 是这只猫逐行的身体右缘。</summary>
+        static bool InTail(int x, int y, double[] back) => y >= 280 && y < 690 && y < 659 + 0.176 * (x - 910) && x > back[y - 280];
+
+        public static Raster Tailless(Raster a, double[] back)
         {
             var o = a.Copy();
-            for (int y = 280; y < 690; y++) for (int x = 780; x < 1100; x++) if (InTail(x, y)) o[x, y] = Vector4.Zero;
+            for (int y = 280; y < 690; y++) for (int x = 780; x < 1100; x++) if (InTail(x, y, back)) o[x, y] = Vector4.Zero;
             return o;
+        }
+
+        /// <summary>每一行从身体里往右找，第一段透明就是后背的边；身体和尾巴连在一起的行（尾巴根部）沿用上一行。</summary>
+        static double[] MeasureBack(Raster f)
+        {
+            var edges = (double[])backEdge.Clone();
+            double? last = null;
+            for (int i = 0; i < edges.Length; i++)
+            {
+                int y = i + 280;
+                double template = backEdge[i];
+                int x = (int)template - 40;
+                while (x < W && f[x, y].W > 0.3f) x++;
+                double limit = Math.Min(template + 60, (last ?? template + 48) + 12);  // 跑太远、或比上一行突然外扩很多，说明连着尾巴
+                double? found = x > (int)template - 40 && x + 2 < limit ? x + 2 : (double?)null;
+                if (found != null) last = found;
+                edges[i] = Math.Max(template, found ?? last ?? template);
+            }
+            return edges;
         }
 
         /// <summary>手臂描边外残留的浅色细边，衬在深色桌面上会显出来：从 top 行往下向内削，碰到描边为止。</summary>
@@ -175,12 +196,19 @@ namespace InkCat
         public sealed class Cat
         {
             public readonly Raster Idle, Typing, Cover, Sleep;
+            /// <summary>可选的 no_arms.png：拿掉两只前爪、胸口画完整的身体。没有时用捂眼那张补。</summary>
+            public readonly Raster Bare;
             /// <summary>type_both 里右臂画在敲键的位置，还是和 idle 一样搭着。</summary>
             public readonly bool RightArmRests;
+            /// <summary>这只猫逐行的身体右缘：比模板胖的，以实际轮廓为准。</summary>
+            public readonly double[] Back;
 
-            public Cat(Raster idle, Raster typing, Raster cover, Raster sleep)
+            Raster Reference => Bare ?? Cover;
+
+            public Cat(Raster idle, Raster typing, Raster cover, Raster sleep, Raster bare = null)
             {
-                (Idle, Typing, Cover, Sleep) = (idle, typing, cover, sleep);
+                (Idle, Typing, Cover, Sleep, Bare) = (idle, typing, cover, sleep, bare);
+                Back = MeasureBack(idle);
                 var m = Union(Mask(armL), Mask(idleL));
                 int moved = 0, total = 0;
                 for (int y = 470; y < 630; y++)
@@ -193,17 +221,84 @@ namespace InkCat
                 RightArmRests = moved * 5 < total;
             }
 
+            /// <summary>
+            /// 右臂（画面左边那只）在这一帧里的实际范围。没有 no_arms 时只认伸出身体轮廓的部分（捂眼图里那里是空的）；
+            /// 有 no_arms 时，和它颜色不同的也算。最后补上中间的洞，只留连着爪子的那一块。与 Mac 版对应。
+            /// </summary>
+            public float[] RightArmRegion(Raster f)
+            {
+                var zone = Union(Mask(idleL, 30), Mask(armL, 30));
+                var reference = Reference;
+                const int x0 = 270, x1 = 520, y0 = 440, y1 = 650;
+                var hit = new bool[W * H];
+                for (int y = y0; y < y1; y++)
+                    for (int x = x0; x < x1; x++)
+                    {
+                        int i = y * W + x;
+                        if (zone[i] <= 0 || f.Pixels[i].W <= 0.3f || OnDesk(x, y)) continue;
+                        hit[i] = reference.Pixels[i].W < 0.3f || Bare != null && Differs(f.Pixels[i], reference.Pixels[i]);
+                    }
+                for (int pass = 0; pass < 2; pass++)  // 连起来
+                {
+                    var s = (bool[])hit.Clone();
+                    for (int y = y0 + 1; y < y1 - 1; y++)
+                        for (int x = x0 + 1; x < x1 - 1; x++)
+                        {
+                            int i = y * W + x;
+                            if (!s[i] && (s[i - 1] || s[i + 1] || s[i - W] || s[i + W])) hit[i] = true;
+                        }
+                }
+                bool Inside(int j) { int x = j % W, y = j / W; return x >= x0 && x < x1 && y >= y0 && y < y1; }
+                var outside = new bool[W * H];  // 从框边往里找空白，剩下的是手臂和它包住的洞
+                var stack = new Stack<int>();
+                for (int y = y0; y < y1; y++)
+                    for (int x = x0; x < x1; x++)
+                        if ((x == x0 || x == x1 - 1 || y == y0 || y == y1 - 1) && !hit[y * W + x]) { outside[y * W + x] = true; stack.Push(y * W + x); }
+                while (stack.Count > 0)
+                {
+                    int i = stack.Pop();
+                    foreach (int j in new[] { i - 1, i + 1, i - W, i + W })
+                        if (Inside(j) && !outside[j] && !hit[j]) { outside[j] = true; stack.Push(j); }
+                }
+                var label = Enumerable.Repeat(-1, W * H).ToArray();  // 只留最大的一块，去掉零碎的点
+                var sizes = new List<int>();
+                for (int y = y0; y < y1; y++)
+                    for (int x = x0; x < x1; x++)
+                    {
+                        int start = y * W + x;
+                        if (outside[start] || label[start] >= 0) continue;
+                        int n = 0;
+                        label[start] = sizes.Count;
+                        stack.Push(start);
+                        while (stack.Count > 0)
+                        {
+                            int i = stack.Pop();
+                            n++;
+                            foreach (int j in new[] { i - 1, i + 1, i - W, i + W })
+                                if (Inside(j) && !outside[j] && label[j] < 0) { label[j] = sizes.Count; stack.Push(j); }
+                        }
+                        sizes.Add(n);
+                    }
+                var m = new float[W * H];
+                if (sizes.Count == 0 || sizes.Max() <= 400) return m;
+                int biggest = sizes.IndexOf(sizes.Max());
+                for (int i = 0; i < m.Length; i++) if (label[i] == biggest) m[i] = 1;
+                return m;
+            }
+
             /// <summary>双臂所在处换成桌面或透明，肩根保留。</summary>
             public Raster Armless(Raster f)
             {
-                var mask0 = Union(Mask(armL, 4), Mask(idleL, 4));
-                var o = Trim(Mix(Mix(f, Cover, Mask(armM, 3, 1)), Cover, mask0));
+                var arm = RightArmRegion(f);
+                var mask0 = Union(Union(Mask(armL, 4), Mask(idleL, 4)), arm);
+                var o = Trim(Mix(Mix(f, Reference, Mask(armM, 3, 1)), Reference, mask0));
                 for (int y = 440; y < 640; y++)
                     for (int x = 300; x < 500; x++)
                     {
                         if (mask0[y * W + x] <= 0) continue;
-                        if (x < 461 && y < 572) o[x, y] = Vector4.Zero;  // cover 里抬起的左臂
-                        if (RightArmRests) o[x, y] = o[x, y] * (1 - ruff[y * W + x]) + f[x, y] * ruff[y * W + x];
+                        if (x < 461 && y < 572 && Bare == null) o[x, y] = Vector4.Zero;  // cover 里抬起的左臂
+                        float r = ruff[y * W + x] * (1 - arm[y * W + x]);
+                        if (RightArmRests) o[x, y] = o[x, y] * (1 - r) + f[x, y] * r;
                         else if (x >= 458 && y < 548 || Hypot(x - 458, y - 504) < 37) o[x, y] = f[x, y];  // 肩根保持不动
                     }
                 return o;
@@ -237,12 +332,12 @@ namespace InkCat
                     int Area(Raster r)
                     {
                         int n = 0;
-                        for (int y = 280; y < 690; y++) for (int x = 780; x < 1100; x++) if (InTail(x, y) && r[x, y].W > 0.5f) n++;
+                        for (int y = 280; y < 690; y++) for (int x = 780; x < 1100; x++) if (InTail(x, y, Back) && r[x, y].W > 0.5f) n++;
                         return n;
                     }
                     var f = Area(Typing) > Area(Idle) * 102 / 100 ? Typing : Idle;
                     var o = new Raster();
-                    for (int y = 280; y < 690; y++) for (int x = 780; x < 1100; x++) if (InTail(x, y)) o[x, y] = f[x, y];
+                    for (int y = 280; y < 690; y++) for (int x = 780; x < 1100; x++) if (InTail(x, y, Back)) o[x, y] = f[x, y];
                     for (int y = 606; y < 666; y++) for (int x = 878; x < 924; x++) o[x, y] = o[924 + (924 - x), y];
                     return o;
                 }
@@ -253,7 +348,7 @@ namespace InkCat
             {
                 get
                 {
-                    if (RightArmRests) return Cut(Idle, ruff);
+                    if (RightArmRests) return Cut(Bare ?? Idle, ruff.Zip(RightArmRegion(Idle), (r, a) => r * (1 - a)).ToArray());  // 只留毛，不带手臂
                     var o = Cut(Idle, Mask(idleL, 2));
                     for (int y = 0; y < H; y++)
                         for (int x = 0; x < W; x++)
@@ -280,9 +375,9 @@ namespace InkCat
                     double t = i / 1000.0;
                     table.Add((table[i - 1].length + (Bezier(t).Item1 - Bezier(t - 0.001).Item1).Length, t));
                 }
-                var src = Cut(Typing, Mask(RightArmRests
+                var src = Cut(Typing, Union(RightArmRegion(Typing), Mask(RightArmRests
                     ? "414,499 405,504 390,512 370,522 352,533 335,540 324,547 314,558 308,570 307,582 310,592 318,601 328,609 340,613 352,612 358,610 368,612 380,610 392,604 402,599 412,594 430,593 450,594 470,590 486,588 486,566 470,552 456,540 446,526 436,514 424,506"
-                    : "443,462 428,480 402,488 376,500 352,519 337,545 330,575 329,598 335,616 349,628 368,634 386,630 400,624 411,613 416,600 418,588 440,585 470,583 496,580 498,540 490,500 462,476"));
+                    : "443,462 428,480 402,488 376,500 352,519 337,545 330,575 329,598 335,616 349,628 368,634 386,630 400,624 411,613 416,600 418,588 440,585 470,583 496,580 498,540 490,500 462,476")));
                 var o = new Raster(140, (int)table[1000].length);
                 for (int y = 0; y < o.Height; y++)
                 {

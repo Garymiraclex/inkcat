@@ -159,6 +159,30 @@ namespace InkCat
             Console.WriteLine($"       有缓存时合成 {again.Elapsed.TotalSeconds:0.0}s");
             Check(Compose().Look.Images.Count == 0, "全部原版时不合成");
             Check(Library.Scan().First(x => x.Id == "user/配件").Title == "测试配件", "读取 skin.json");
+
+            // 后背更胖的猫：在后背加一条，尾巴层不能带上它
+            string fat = NewPack("胖背");
+            Frames(fat, f => f);
+            foreach (string f in Slot.Cat.Files())
+            {
+                var r = Library.Decode(File.ReadAllBytes(Path.Combine(fat, f + ".png")), f);
+                for (int y = 420; y < 600; y++) for (int x = 880; x < 905; x++) if (r[x - 20, y].W > 0.9f) r[x, y] = r[x - 20, y];
+                using (var file = File.Create(Path.Combine(fat, f + ".png"))) new PngBitmapEncoder { Frames = { BitmapFrame.Create(r.Image) } }.Save(file);
+            }
+            var fatCat = Library.Scan().First(x => x.Id == "user/胖背");
+            var ff = Slot.Cat.Files().Select(fatCat.Image).ToArray();
+            var fc = new Cutter.Cat(ff[0], ff[1], ff[3], ff[2]);
+            var tail = fc.Tail;
+            int leak = 0;
+            for (int y = 430; y < 590; y++) for (int x = 880; x < 905; x++) if (tail[x, y].W > 0.5f) leak++;
+            Check(leak == 0, $"后背更胖时尾巴不带后背（漏 {leak} 点）");
+
+            // no_arms：给出无臂身体时也能拆
+            string bare = NewPack("无臂");
+            Frames(bare, f => f);
+            File.WriteAllBytes(Path.Combine(bare, "no_arms.png"), Art.Read("packs/classic/cover_eyes.png"));
+            var withBare = Compose(("cat", "user/无臂"));
+            Check(withBare.Problems.Count == 0 && withBare.Look.Images.Count == 15, "带 no_arms.png 能拆");
             var blue = Compose(("cat", "british_blue"), ("scarf", "user/配件"));
             Check(Library.Scan().Count(p => p.IsBuiltin && p.Slots.Contains(Slot.Cat)) == 2 && blue.Problems.Count == 0 && blue.Look.Joint.Length == 0 && blue.Warnings.ContainsKey(Slot.Scarf), "自带英短蓝猫，身上有围巾不能再戴");
             foreach (var i in blue.Look.Images) if (i.Key.StartsWith("plate")) Save(i.Value, "blue_" + i.Key);

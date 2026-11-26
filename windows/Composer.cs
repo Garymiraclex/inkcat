@@ -172,10 +172,11 @@ namespace InkCat
         CookedCat Cook(Pack pack, Pack template)
         {
             var data = Slot.Cat.Files().Select(f => pack.Read(f + ".png")).ToArray();
+            var bare = pack.Has("no_arms.png") ? pack.Read("no_arms.png") : null;
             string key;
             using (var sha = SHA256.Create())
             {
-                byte[] all = Encoding.UTF8.GetBytes("10").Concat(data.SelectMany(d => sha.ComputeHash(d))).ToArray();  // 拆图算法变了就加一
+                byte[] all = Encoding.UTF8.GetBytes("13").Concat(data.Concat(bare == null ? new byte[0][] : new[] { bare }).SelectMany(d => sha.ComputeHash(d))).ToArray();  // 拆图算法变了就加一
                 key = string.Concat(sha.ComputeHash(all).Select(b => b.ToString("x2")));
             }
             string cached = Path.Combine(Library.Cache, key);
@@ -185,8 +186,9 @@ namespace InkCat
                 if (cat == null)
                 {
                     var frames = Slot.Cat.Files().Zip(data, (name, d) => Cutout.Clean(Library.Decode(d, name), name)).ToArray();
-                    string note = Check(frames, pack.Id == template.Id ? null : template);
-                    cat = Cut(new Cutter.Cat(frames[0], frames[1], frames[3], frames[2]));
+                    var extra = bare == null ? null : Cutout.Clean(Library.Decode(bare, "no_arms"), "no_arms");
+                    string note = Check(extra == null ? frames : frames.Append(extra).ToArray(), pack.Id == template.Id ? null : template);
+                    cat = Cut(new Cutter.Cat(frames[0], frames[1], frames[3], frames[2], extra));
                     cat.Note = note;
                     Store(cat, cached);
                 }
@@ -203,7 +205,7 @@ namespace InkCat
         /// <summary>帧与帧对不齐就没法用；和模板差太多则提醒。</summary>
         static string Check(Raster[] frames, Pack template)
         {
-            for (int n = 1; n < 4; n++)  // 比耳朵和头顶，各帧里都不该动
+            for (int n = 1; n < frames.Length; n++)  // 比耳朵和头顶，各帧里都不该动
             {
                 int moved = 0, total = 0;
                 for (int y = 40; y < 240; y += 2)
@@ -212,7 +214,7 @@ namespace InkCat
                         total++;
                         if (Cutter.Differs(frames[n][x, y], frames[0][x, y])) moved++;
                     }
-                if (moved * 100 > total * 12) throw new Problem($"{Slot.Cat.Files()[n]}.png 和 idle.png 的头没有对齐");
+                if (moved * 100 > total * 12) throw new Problem($"{Slot.Cat.Files().Append("no_arms").ElementAt(n)}.png 和 idle.png 的头没有对齐");
             }
             if (template == null) return "";
             var t = template.Image("idle");
@@ -228,7 +230,7 @@ namespace InkCat
 
         public static CookedCat Cut(Cutter.Cat c)
         {
-            var cover = Cutter.Tailless(Cutter.Trim(c.Cover));
+            var cover = Cutter.Tailless(Cutter.Trim(c.Cover), c.Back);
             // 去掉桌面；腹部下缘用捂眼那张，没有桌沿
             Raster Torso(Raster f)
             {
@@ -249,7 +251,7 @@ namespace InkCat
             {
                 Images = new Dictionary<string, Raster>
                 {
-                    ["body"] = Torso(Cutter.Tailless(c.Armless(c.Idle))),
+                    ["body"] = Torso(Cutter.Tailless(c.Armless(c.Idle), c.Back)),
                     ["body_cover"] = bodyCover,
                     ["raised_arms"] = Cutter.Cut(bodyCover, Cutter.RaisedArms),
                     ["tail"] = c.Tail.Crop(860, 290, 240, 400),
