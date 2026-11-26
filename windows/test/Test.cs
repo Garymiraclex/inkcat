@@ -488,7 +488,7 @@ namespace InkCat
             SetCursorPos(x, y);
             Wait(0.3);
             mouse_event(2, 0, 0, 0, IntPtr.Zero);
-            Wait(0.1);
+            Wait(0.3);  // 等按下先处理完，否则第一段移动会被漏掉
             for (int i = 1; i <= 10; i++) { SetCursorPos(x - 12 * i, y - 5 * i); Wait(0.03); }
             mouse_event(4, 0, 0, 0, IntPtr.Zero);
             Wait(0.5);
