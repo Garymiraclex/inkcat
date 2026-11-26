@@ -234,7 +234,7 @@ enum Cutter {
                 var x = Int(template) - 40
                 while x < W, f[x, y].w > 0.3 { x += 1 }
                 // 跑太远、或比上一行突然外扩很多，说明连着尾巴
-                let limit = min(template + 60, (last ?? template + 48) + 12)
+                let limit = min(template + 60, (last ?? template + 44) + 16)
                 let found = x > Int(template) - 40 && Double(x) + 2 < limit ? Double(x) + 2 : nil
                 if let found { last = found }
                 edges[i] = max(template, found ?? last ?? template)
