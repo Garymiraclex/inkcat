@@ -104,15 +104,12 @@ namespace InkCat
 
         void Vanish()
         {
-            var fade = new System.Windows.Media.Animation.DoubleAnimation(0, TimeSpan.FromSeconds(0.15));
-            fade.Completed += (s, e) =>
+            Cat.Vanish(() =>
             {
+                if (!Visible) return;  // 动画途中已从菜单隐藏
                 Visible = false;
-                window.BeginAnimation(UIElement.OpacityProperty, null);
-                window.Opacity = 1;
                 comeBack.Start();
-            };
-            window.BeginAnimation(UIElement.OpacityProperty, fade);
+            });
         }
 
         bool Visible
@@ -121,7 +118,7 @@ namespace InkCat
             set
             {
                 comeBack.Stop();
-                if (value) { window.Show(); input.StartMouse(); }
+                if (value) { window.Show(); Cat.Appear(); input.StartMouse(); }
                 else { window.Hide(); input.StopMouse(); }
                 SyncListening();
             }

@@ -484,14 +484,17 @@ namespace InkCat
             Wait(0.6);
             Check(IsWindowVisible(Cat), "点得太慢不躲");
             Clicks(3, 120);
+            foreach (int ms in new[] { 150, 350, 550 }) { Wait(ms == 150 ? 0.15 : 0.2); Screen($"live_out{ms}"); }
             Wait(0.6);
             Check(!IsWindowVisible(Cat), "连点三下躲起来");
-            Screen("live_vanished");
             Wait(8.5);
             Check(!IsWindowVisible(Cat), "9 秒时还躲着");
             var gone = Stopwatch.StartNew();
             while (!IsWindowVisible(Cat) && gone.Elapsed.TotalSeconds < 3) Wait(0.1);
-            Check(IsWindowVisible(Cat), $"约 10 秒后回来（{9.1 + gone.Elapsed.TotalSeconds:0.0}s）");
+            Check(IsWindowVisible(Cat), $"约 10 秒后回来（消失后 {8.5 + gone.Elapsed.TotalSeconds:0.0}s）");
+            foreach (int ms in new[] { 150, 450, 650 }) { Wait(ms == 150 ? 0.15 : 0.2 + (ms == 450 ? 0.1 : 0)); Screen($"live_in{ms}"); }
+            Wait(0.6);
+            Screen("live_back");
             Check(Where().Left == moved.Left && Where().Top == moved.Top, "回来后位置不变");
 
             var second = Process.Start(exe);

@@ -24,7 +24,7 @@ namespace InkCat
 
         readonly ScaleTransform zoom = new ScaleTransform();
         readonly TranslateTransform shake = new TranslateTransform();
-        readonly Canvas stage, arms = Layer(), lights = Layer(), joint = Layer(), bubbles = Layer(), mood = Layer(), blush = Layer(), sweat = Layer(), mouse = Layer();
+        readonly Canvas stage, arms = Layer(), lights = Layer(), joint = Layer(), bubbles = Layer(), mood = Layer(), blush = Layer(), sweat = Layer(), mouse = Layer(), desk = Layer();
         readonly Image plate = Picture(0, 0, 1200, 896), face = Picture(400, 200, 360, 272), mouseImage = Picture(0, 0, 176, 136);
         readonly Image tail = Picture(860, 290, 240, 400);
         readonly Image[] squints = { Picture(400, 250, 290, 150), Picture(400, 250, 290, 150) };
@@ -139,7 +139,12 @@ namespace InkCat
             tail.RenderTransform = wag;
             face.Opacity = 0;
             BuildMood();
-            Add(tail, plate, mood, face, lights);
+            // 桌面：平时画在底图里，躲开时才单独拿出来
+            deskPlate.Visibility = Visibility.Collapsed;
+            desk.RenderTransform = deskShift;
+            desk.Children.Add(deskPlate);
+            desk.Children.Add(lights);
+            Add(tail, plate, mood, face, desk);
 
             mouse.RenderTransform = mouseSpot;
             mouseImage.Effect = new DropShadowEffect { Color = Colors.Black, Opacity = 0.22, BlurRadius = 12, ShadowDepth = 11.4, Direction = 322 };
@@ -150,7 +155,8 @@ namespace InkCat
 
             arms.Children.Add(joint);
             foreach (var limb in new Limb[] { right, left, mouser }) arms.Children.Add(limb);
-            Add(mouse, arms, bubbles);
+            desk.Children.Add(mouse);
+            Add(arms, bubbles);
 
             MoveMouse(new Point(0.5, 0.5), 0);
             left.Reach(leftRest, 0);
@@ -180,7 +186,64 @@ namespace InkCat
             ShowPose();
         }
 
-        void ShowPose() => plate.Source = look.Image(secure ? "plate_cover" : "plate");
+        void ShowPose() => plate.Source = deskPlate.Source = look.Image(secure ? "plate_cover" : "plate");
+
+        // ———— 躲开 ————
+
+        readonly Image deskPlate = Picture(0, 0, 1200, 896);
+        readonly TranslateTransform deskShift = new TranslateTransform();
+        bool gone;
+
+        /// <summary>桌沿以下归桌面：返回桌面那一侧或猫那一侧。</summary>
+        static Geometry DeskSide(bool below) => Geometry.Parse($"M-10,524.6 L455,599 455,604.3 1210,713.8 1210,{(below ? 900 : -10)} -10,{(below ? 900 : -10)}Z");
+
+        /// <summary>把底图拆成猫和桌面两层，桌面才能单独移动。</summary>
+        void Split(bool on)
+        {
+            deskPlate.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            deskPlate.Clip = on ? DeskSide(true) : null;
+            plate.Clip = on ? DeskSide(false) : null;
+        }
+
+        static void Animate(UIElement target, DependencyProperty property, double to, double seconds, EasingMode ease, Action then = null)
+        {
+            var a = new DoubleAnimation(to, Seconds(seconds)) { EasingFunction = new QuadraticEase { EasingMode = ease } };
+            if (then != null) a.Completed += (s, e) => then();
+            target.BeginAnimation(property, a);
+        }
+
+        void Slide(double x, double y, double seconds, EasingMode ease, Action then)
+        {
+            var a = new DoubleAnimation(y, Seconds(seconds)) { EasingFunction = new QuadraticEase { EasingMode = ease } };
+            deskShift.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(x, Seconds(seconds)) { EasingFunction = new QuadraticEase { EasingMode = ease } });
+            a.Completed += (s, e) => then();
+            deskShift.BeginAnimation(TranslateTransform.YProperty, a);
+        }
+
+        /// <summary>躲开：键盘、桌垫、鼠标往左下滑走，猫再淡出，结束后调用 done。</summary>
+        public void Vanish(Action done)
+        {
+            gone = true;
+            Split(true);
+            Animate(desk, OpacityProperty, 0, 0.4, EasingMode.EaseIn);
+            Slide(-560, 420, 0.4, EasingMode.EaseIn, () =>
+            {
+                if (gone) Animate(stage, OpacityProperty, 0, 0.35, EasingMode.EaseInOut, () => { if (gone) done(); });
+            });
+        }
+
+        /// <summary>回来：猫先淡入，桌面再从左下滑回来。</summary>
+        public void Appear()
+        {
+            if (!gone) return;
+            gone = false;
+            Animate(stage, OpacityProperty, 1, 0.3, EasingMode.EaseInOut, () =>
+            {
+                if (gone) return;
+                Animate(desk, OpacityProperty, 1, 0.4, EasingMode.EaseOut);
+                Slide(0, 0, 0.4, EasingMode.EaseOut, () => { if (!gone) Split(false); });
+            });
+        }
 
         /// <summary>键帽亮光，平时透明。</summary>
         void BuildLights()
