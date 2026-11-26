@@ -405,7 +405,23 @@ final class CatView: NSView {
     }
 
     override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    override func mouseDown(with event: NSEvent) {
+        if countClick(at: NSEvent.mouseLocation, time: event.timestamp) { return onTripleClick() }
+        window?.performDrag(with: event)
+    }
+
+    /// 在猫身上连点三下时调用。
+    var onTripleClick: () -> Void = {}
+    private var clicks: [(at: CGPoint, time: TimeInterval)] = []
+
+    /// 记下一次按下；原地连点到第三下时返回真。拖动过的不算。
+    func countClick(at p: CGPoint, time: TimeInterval) -> Bool {
+        if let last = clicks.last, time - last.time > NSEvent.doubleClickInterval || hypot(p.x - last.at.x, p.y - last.at.y) > 4 { clicks = [] }
+        clicks.append((p, time))
+        guard clicks.count >= 3 else { return false }
+        clicks = []
+        return true
+    }
 
     /// 光标在猫身上时，全局监听收不到事件，改由跟踪区接收。
     override func updateTrackingAreas() {
