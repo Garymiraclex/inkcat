@@ -12,7 +12,7 @@
 
 ## 换装
 
-右键猫 →「设置与演示 → 外观」。猫、键盘、桌垫、鼠标、耳机、帽子、围巾分别换，自己的图放进素材文件夹就生效，不用编译。素材包和 Mac 版通用，图怎么画见[素材要求](../docs/ART_BRIEF.md)，怎么放见[换素材说明](../docs/CUSTOM_ART.md)。
+右键猫 →「设置与演示 → 外观」。猫、键盘、桌垫、鼠标、耳机、帽子、围巾分别换，不用编译。用 AI 画了自己的猫，点「导入生图…」把原图拖进去，程序会去背景、去水印、对齐、检查，存成素材包；整理好的图也可以直接放进素材文件夹。素材包和 Mac 版通用，图怎么画见[素材要求](../docs/ART_BRIEF.md)，怎么放见[换素材说明](../docs/CUSTOM_ART.md)。
 
 ## 隐私
 
@@ -41,7 +41,7 @@
 dotnet build windows/InkCat.csproj -c Release -o out
 ```
 
-每次推送都会在 GitHub 的 Windows 机器上自动编译并跑一遍 `windows/test`：拆图、换装、坏素材和各种姿势的离屏测试，再启动真程序，用模拟的键盘鼠标操作并截屏对比。没有覆盖的：多显示器不同缩放、高分屏、触控板和触摸屏、实体键盘的手感。
+每次推送都会在 GitHub 的 Windows 机器上自动编译并跑一遍 `windows/test`：拆图、换装、坏素材、导入生图和各种姿势的离屏测试，再启动真程序，用模拟的键盘鼠标操作并截屏对比。没有覆盖的：多显示器不同缩放、高分屏、触控板和触摸屏、实体键盘的手感。
 
 ## 文件
 
@@ -55,6 +55,7 @@ dotnet build windows/InkCat.csproj -c Release -o out
 | `Keyboard.cs` | 键位、指法 |
 | `Wardrobe.cs` `LookPane.cs` | 当前的装扮和「外观」页 |
 | `Library.cs` `Composer.cs` | 素材包的扫描、校验；把选中的部位合成一身装扮 |
+| `Cutout.cs` `Importer.cs` `ImportWindow.cs` | 去掉纯色或棋盘格背景；导入生图：去底、去水印、对齐、检查，存成素材包 |
 | `Cutter.cs` `Raster.cs` | 拆猫和图像运算，与 Mac 版 `Sources/Cutter.swift` 对应 |
 | `Settings.cs` `Demo.cs` | 设置与演示窗口 |
 

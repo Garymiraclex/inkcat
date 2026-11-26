@@ -33,6 +33,7 @@ namespace InkCat
             Section("姿势", Poses);
             Section("即时更换", Swapping);
             Section("设置窗口", Settings);
+            Section("导入生图", Importing);
             Section("真机", () => Live(args[1]));
             Console.WriteLine(failures == 0 ? "全部通过" : $"{failures} 项失败");
             return failures == 0 ? 0 : 1;
@@ -220,9 +221,9 @@ namespace InkCat
                 finally { Directory.Delete(path, true); }
             }
             byte[] mouse = Art.Read("packs/classic/mouse.png");
-            Expect("hat", "尺寸", "1024×768", p => Picture(p + "/hat.png", 1024, 768, g => { }));
+            Expect("hat", "尺寸", "1000×1000", p => Picture(p + "/hat.png", 1000, 1000, g => { }));
             Expect("cat", "缺帧", "还缺", p => Picture(p + "/idle.png", 1200, 896, g => { }));
-            Expect("hat", "棋盘", "背景不是透明", p => Picture(p + "/hat.png", 1200, 896, g => { for (int i = 0; i < 2700; i++) g.FillRectangle(i % 2 == i / 60 % 2 ? System.Drawing.Brushes.White : System.Drawing.Brushes.LightGray, i % 60 * 20, i / 60 * 20, 20, 20); }));
+            Expect("hat", "渐变", "背景不是透明", p => Picture(p + "/hat.png", 1200, 896, g => { using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 0, 1200, 896), System.Drawing.Color.White, System.Drawing.Color.DimGray, 0f)) g.FillRectangle(b, 0, 0, 1200, 896); }));
             Expect("hat", "损坏", "打不开", p => File.WriteAllBytes(p + "/hat.png", new byte[500]));
             Expect("mouse", "空文件", "打不开", p => File.WriteAllBytes(p + "/mouse.png", new byte[0]));
             Expect("mouse", "没写完", "不完整", p => File.WriteAllBytes(p + "/mouse.png", mouse.Take(mouse.Length / 2).ToArray()));
@@ -379,6 +380,109 @@ namespace InkCat
             Wardrobe.Shared.Choose(Slot.Scarf, "");
             Wait(1);
             w.Close();
+        }
+
+        // ———— 导入生图 ————
+
+        /// <summary>模拟 AI 原图：灰底（或棋盘格）、挪动缩放、角落水印、缩成 1024×768 的 JPG。</summary>
+        static byte[] Degrade(Raster image, double dx, double dy, double s, bool checker = false, bool mark = false, params Raster[] over)
+        {
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+            {
+                dc.DrawRectangle(new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD5, 0xD5, 0xCC)), null, new Rect(0, 0, 1200, 900));
+                if (checker)
+                    for (int y = 0; y < 900; y += 24) for (int x = 0; x < 1200; x += 24) if ((x / 24 + y / 24) % 2 == 0) dc.DrawRectangle(System.Windows.Media.Brushes.White, null, new Rect(x, y, 24, 24));
+                var m = new Matrix();
+                m.Translate(-600, -450);
+                m.Scale(s, s);
+                m.Translate(600 + dx, 450 + dy);
+                dc.PushTransform(new MatrixTransform(m));
+                foreach (var layer in new[] { image }.Concat(over)) dc.DrawImage(layer.Image, new Rect(0, 2, 1200, 896));
+                dc.Pop();
+                if (mark) dc.DrawEllipse(new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x80, 0x80, 0x8C)), null, new System.Windows.Point(1155, 865), 15, 15);
+            }
+            var target = new RenderTargetBitmap(1200, 900, 96, 96, PixelFormats.Pbgra32);
+            target.Render(visual);
+            using (var file = new MemoryStream())
+            {
+                new JpegBitmapEncoder { QualityLevel = 82, Frames = { BitmapFrame.Create(new TransformedBitmap(target, new ScaleTransform(1024 / 1200.0, 768 / 900.0))) } }.Save(file);
+                return file.ToArray();
+            }
+        }
+
+        static double Overlap(Raster a, Raster b)
+        {
+            int both = 0, either = 0;
+            for (int i = 0; i < a.Pixels.Length; i++)
+            {
+                bool p = a.Pixels[i].W > 0.5f, q = b.Pixels[i].W > 0.5f;
+                if (p && q) both++;
+                if (p || q) either++;
+            }
+            return (double)both / either;
+        }
+
+        static void Importing()
+        {
+            var shifts = new Dictionary<Pose, (double dx, double dy, double s)> { [Pose.Idle] = (14, -9, 1.02), [Pose.TypeBoth] = (-6, 5, 1), [Pose.Sleep] = (3, 2, 0.99), [Pose.CoverEyes] = (-17, -11, 1.03) };
+            var truth = shifts.Keys.ToDictionary(p => p, p => Library.Decode(Art.Read($"packs/british_blue/{p.Id()}.png"), p.Id()));
+            var raw = new Dictionary<Pose, Raster>();
+            foreach (bool checker in new[] { false, true })
+            {
+                string label = checker ? "棋盘格" : "灰底";
+                raw = shifts.ToDictionary(p => p.Key, p => Importer.Load(Degrade(truth[p.Key], p.Value.dx, p.Value.dy, p.Value.s, checker, p.Key == Pose.Idle)));
+                var t = Stopwatch.StartNew();
+                var r = Importer.Process(raw);
+                Check(r.IsReady, $"{label}、挪动、4:3 JPG：整理好（{t.Elapsed.TotalSeconds:0.0}s）{string.Join(" ", r.Problems.Values)}");
+                foreach (var p in shifts.Keys.Where(r.Images.ContainsKey))
+                {
+                    double overlap = Overlap(r.Images[p], truth[p]);
+                    Check(overlap > 0.985, $"{label} {p.Title()}：和原图重合 {overlap:P1}；{(r.Notes.TryGetValue(p, out var n) ? n : "")}");
+                }
+                Check(r.Notes.TryGetValue(Pose.Idle, out var idleNote) && idleNote.Contains("水印"), $"{label}：去掉角落水印");
+                if (!checker) foreach (var p in r.Images) Save(p.Value.Image, "import_" + p.Key.Id());
+            }
+
+            // 耳机头梁内侧被围住的底；浅色的毛不当成背景
+            var classic = Pose.Idle.Template();
+            Raster Gamer(string f) => Library.Decode(Art.Read($"packs/gamer/{f}.png"), f);
+            var worn = new Raster().Under(Gamer("headset_back")).Under(classic).Under(Gamer("headset"));
+            var dressed = Importer.Load(Degrade(Gamer("headset_back"), 0, 0, 1, false, false, classic, Gamer("headset")));
+            var knocked = Cutout.Knock(dressed, Cutout.Paper(dressed), Importer.Alpha(classic));
+            Check(Overlap(knocked, worn) > 0.985, $"头梁内侧的底清掉：重合 {Overlap(knocked, worn):P1}");
+            Save(knocked.Image, "import_headset");
+
+            var twice = new Dictionary<Pose, Raster>(raw) { [Pose.TypeBoth] = raw[Pose.Idle] };
+            Check(Importer.Process(twice).Problems.TryGetValue(Pose.TypeBoth, out var dup) && dup.Contains("同一张"), "同一张图放两格：" + dup);
+            Check(Importer.Process(new Dictionary<Pose, Raster> { [Pose.Idle] = raw[Pose.Idle] }).Images.Count == 1, "只放一张也能整理");
+            try { Importer.Load(new byte[300]); Check(false, "坏图"); } catch (Problem e) { Check(e.Message.Contains("打不开"), "坏图：" + e.Message); }
+
+            // 窗口：放入、整理、预览、保存并换上
+            foreach (string old in new[] { "窗口导入" }) if (Directory.Exists(Path.Combine(Library.Folder, old))) Directory.Delete(Path.Combine(Library.Folder, old), true);
+            var w = ImportWindow.Open();
+            Wait(0.5);
+            foreach (var p in shifts) w.Put(p.Key, Degrade(truth[p.Key], p.Value.dx, p.Value.dy, p.Value.s, mark: p.Key == Pose.Idle));
+            var clock = Stopwatch.StartNew();
+            while ((w.Busy || !w.Result.IsReady) && clock.Elapsed.TotalSeconds < 60) Wait(0.1);
+            Check(w.Result.IsReady, $"窗口整理并合成（{clock.Elapsed.TotalSeconds:0.0}s）");
+            Wait(2.5);
+            var shot = new RenderTargetBitmap((int)w.ActualWidth, (int)w.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+            shot.Render(w);
+            Save(shot, "import_window");
+            w.NameBox.Text = "窗口导入";
+            w.Save();
+            Check(Wardrobe.Shared.Choice(Slot.Cat) == "user/窗口导入" && File.Exists(Path.Combine(Library.Folder, "窗口导入", "cover_eyes.png")), "保存并换上：" + w.Message.Text);
+            foreach (var p in shifts) w.Put(p.Key, Degrade(truth[p.Key], 0, 0, 1));
+            clock.Restart();
+            while ((w.Busy || !w.Result.IsReady) && clock.Elapsed.TotalSeconds < 60) Wait(0.1);
+            w.NameBox.Text = "窗口导入";
+            w.Save();
+            Check(w.Message.Text.Contains("已经有"), "重名：" + w.Message.Text);
+            w.Close();
+            Wardrobe.Shared.Choose(Slot.Cat, Pack.Classic);
+            Wait(1);
+            Directory.Delete(Path.Combine(Library.Folder, "窗口导入"), true);
         }
 
         // ———— 真程序 ————

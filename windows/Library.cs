@@ -169,7 +169,10 @@ namespace InkCat
             return pack;
         }
 
-        /// <summary>读成 1200×896；同比例的大图会缩小。</summary>
+        /// <summary>比例接近 1200×896（4:3 也行）就能用，画的时候居中铺满。</summary>
+        public static bool Fits(int w, int h) => w <= 4096 && h <= 4096 && w >= 600 && Math.Abs((double)w / h / (1200 / 896.0) - 1) < 0.03;
+
+        /// <summary>读成 1200×896。</summary>
         public static Raster Decode(byte[] data, string name)
         {
             if (data.Length > 12 && data[0] == 0x89 && data[1] == 'P' && Encoding.ASCII.GetString(data, data.Length - 12, 12).IndexOf("IEND", StringComparison.Ordinal) < 0)
@@ -178,18 +181,20 @@ namespace InkCat
             {
                 var frame = BitmapDecoder.Create(new MemoryStream(data), BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.None).Frames[0];
                 int w = frame.PixelWidth, h = frame.PixelHeight;
-                if (w > 4096 || h > 4096 || w < 600 || Math.Abs((double)w / h - 1200 / 896.0) >= 0.004) throw new Problem($"{name}.png 是 {w}×{h}，需要 1200×896");
-                return w == Cutter.W && h == Cutter.H ? new Raster(frame) : Resize(frame);
+                if (!Fits(w, h)) throw new Problem($"{name}.png 是 {w}×{h}，需要 1200×896 或 4:3");
+                return Fit(frame);
             }
             catch (Exception e) when (!(e is Problem)) { throw new Problem($"{name}.png 打不开"); }
         }
 
-        static Raster Resize(BitmapSource image)
+        /// <summary>等比缩放到铺满 1200×896，居中裁掉多出的一两行。</summary>
+        public static Raster Fit(BitmapSource image)
         {
+            if (image.PixelWidth == Cutter.W && image.PixelHeight == Cutter.H) return new Raster(image);
             image = new FormatConvertedBitmap(image, PixelFormats.Pbgra32, null, 0);
-            var scaled = new TransformedBitmap(image, new ScaleTransform((double)Cutter.W / image.PixelWidth, (double)Cutter.H / image.PixelHeight));
-            var r = new Raster(scaled);
-            return r.Width == Cutter.W && r.Height == Cutter.H ? r : r.Crop(0, 0, Cutter.W, Cutter.H);
+            double s = Math.Max((double)Cutter.W / image.PixelWidth, (double)Cutter.H / image.PixelHeight);
+            var r = new Raster(new TransformedBitmap(image, new ScaleTransform(s, s)));
+            return r.Crop((r.Width - Cutter.W) / 2, (r.Height - Cutter.H) / 2, Cutter.W, Cutter.H);
         }
 
         /// <summary>只改位置，skin.json 里别的内容原样保留。</summary>
@@ -224,55 +229,6 @@ namespace InkCat
                 }
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
-        }
-    }
-
-    /// <summary>把图整理成透明底。</summary>
-    static class Cutout
-    {
-        /// <summary>背景不透明时，四边颜色一致就从边上往里清掉，否则报错。</summary>
-        public static Raster Clean(Raster image, string name)
-        {
-            const int W = Cutter.W, H = Cutter.H;
-            var px = image.Pixels;
-            var border = Enumerable.Range(0, W).SelectMany(x => new[] { x, (H - 1) * W + x })
-                .Concat(Enumerable.Range(0, H).SelectMany(y => new[] { y * W, y * W + W - 1 })).ToArray();
-            if (border.Count(i => px[i].W > 200 / 255f) * 2 < border.Length) return image;
-
-            float Far(int i, Vector4 q)
-            {
-                var d = Vector4.Abs(px[i] - q) * 255;
-                return Math.Max(d.X, Math.Max(d.Y, d.Z));
-            }
-            var paper = px[0];
-            if (border.Any(i => Far(i, paper) >= 24)) throw new Problem($"{name}.png 的背景不是透明的");
-            var outside = new bool[W * H];
-            var queue = new Stack<int>(border);
-            foreach (int i in border) outside[i] = true;
-            while (queue.Count > 0)
-            {
-                int i = queue.Pop(), x = i % W;
-                foreach (int j in new[] { x > 0 ? i - 1 : i, x < W - 1 ? i + 1 : i, Math.Max(i - W, 0), Math.Min(i + W, W * H - 1) })
-                    if (!outside[j] && Far(j, paper) < 30)
-                    {
-                        outside[j] = true;
-                        queue.Push(j);
-                    }
-            }
-            var o = new Raster();
-            for (int y = 1; y < H - 1; y++)
-                for (int x = 1; x < W - 1; x++)
-                {
-                    int i = y * W + x;
-                    if (outside[i]) continue;
-                    int open = (outside[i - 1] ? 1 : 0) + (outside[i + 1] ? 1 : 0) + (outside[i - W] ? 1 : 0) + (outside[i + W] ? 1 : 0);
-                    if (open == 0) { o.Pixels[i] = px[i]; continue; }
-                    float a = Math.Max(0.35f, 1 - 0.25f * open);  // 边缘一圈去掉底色、变半透明
-                    var v = Vector4.Min(new Vector4(a), Vector4.Max(Vector4.Zero, px[i] - paper * (1 - a)));
-                    v.W = a;
-                    o.Pixels[i] = v;
-                }
-            return o;
         }
     }
 }

@@ -28,6 +28,8 @@ namespace InkCat
             Margin = new Thickness(14);
             foreach (var slot in Slots.All) Children.Add(Row(slot));
 
+            var import = new Button { Content = "导入生图…", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 8, 0) };
+            import.Click += (s, e) => ImportWindow.Open();
             var open = new Button { Content = "打开素材文件夹", Padding = new Thickness(10, 4, 10, 4) };
             open.Click += (s, e) => Process.Start("explorer.exe", "\"" + Library.Folder + "\"");
             var whole = new Button { Content = "整套换成 ▾", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(8, 0, 0, 0) };
@@ -43,9 +45,9 @@ namespace InkCat
                 menu.IsOpen = true;
             };
             Children.Add(new Separator { Margin = new Thickness(0, 10, 0, 10) });
-            Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { open, whole, busy } });
+            Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { import, open, whole, busy } });
             var help = Note();
-            help.Text = "把素材包放进文件夹就会出现在上面，改图后自动更新。图怎么画，见文件夹里的「素材说明」和「_模板」。";
+            help.Text = "用 AI 画了自己的猫，点「导入生图」把原图拖进去就行。也可以把整理好的素材包直接放进文件夹，改图后自动更新。图怎么画，见文件夹里的「素材说明」和「_模板」。";
             help.Margin = new Thickness(0, 8, 0, 0);
             Children.Add(help);
             troubles.Foreground = orange;

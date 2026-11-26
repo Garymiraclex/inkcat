@@ -120,21 +120,38 @@ namespace InkCat
 
         // ———— 合成 ————
 
-        void Refresh()
+        public Pack Classic => Packs.First(p => p.Id == Pack.Classic);
+
+        /// <summary>每个部位穿哪个素材包；给了 <paramref name="cat"/> 就换成这只猫（导入时预览用）。</summary>
+        public Dictionary<Slot, Choice> Outfit(Pack cat, Dictionary<Slot, string> missing = null)
         {
-            var original = Packs.First(p => p.Id == Pack.Classic);
             var outfit = new Dictionary<Slot, Choice>();
-            var missing = new Dictionary<Slot, string>();
             foreach (var slot in Slots.All)
             {
                 var pack = Worn(slot);
                 if (pack != null) outfit[slot] = new Choice { Pack = pack, Place = PlaceOf(slot) };
                 else
                 {
-                    if (Choice(slot) != "") missing[slot] = MissingText(slot);
-                    if (!slot.IsOptional()) outfit[slot] = new Choice { Pack = original };
+                    if (Choice(slot) != "" && missing != null) missing[slot] = MissingText(slot);
+                    if (!slot.IsOptional()) outfit[slot] = new Choice { Pack = Classic };
                 }
             }
+            if (cat != null) outfit[Slot.Cat] = new Choice { Pack = cat };
+            return outfit;
+        }
+
+        /// <summary>刚存好的素材包：马上扫描并换上，不等文件夹监听。</summary>
+        public void Adopt(string id)
+        {
+            Packs = Library.Scan();
+            Choose(Slot.Cat, id);
+        }
+
+        void Refresh()
+        {
+            var original = Classic;
+            var missing = new Dictionary<Slot, string>();
+            var outfit = Outfit(null, missing);
             Missing = missing;
             lock (wake) (job, fallback, turn) = (outfit, original, turn + 1);
             Busy = true;

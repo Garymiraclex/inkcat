@@ -203,7 +203,7 @@ namespace InkCat
         }
 
         /// <summary>帧与帧对不齐就没法用；和模板差太多则提醒。</summary>
-        static string Check(Raster[] frames, Pack template)
+        public static string Check(Raster[] frames, Pack template)
         {
             for (int n = 1; n < frames.Length; n++)  // 比耳朵和头顶，各帧里都不该动
             {
