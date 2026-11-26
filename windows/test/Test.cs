@@ -223,7 +223,7 @@ namespace InkCat
             byte[] mouse = Art.Read("packs/classic/mouse.png");
             Expect("hat", "尺寸", "1000×1000", p => Picture(p + "/hat.png", 1000, 1000, g => { }));
             Expect("cat", "缺帧", "还缺", p => Picture(p + "/idle.png", 1200, 896, g => { }));
-            Expect("hat", "渐变", "背景不是透明", p => Picture(p + "/hat.png", 1200, 896, g => { using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 0, 1200, 896), System.Drawing.Color.White, System.Drawing.Color.DimGray, 0f)) g.FillRectangle(b, 0, 0, 1200, 896); }));
+            Expect("hat", "花背景", "背景不是透明", p => Picture(p + "/hat.png", 1200, 896, g => { var colors = new[] { System.Drawing.Brushes.Tomato, System.Drawing.Brushes.SeaGreen, System.Drawing.Brushes.SteelBlue, System.Drawing.Brushes.Gold }; for (int i = 0; i < 108; i++) g.FillRectangle(colors[i * 7 % 4], i % 12 * 100, i / 12 * 100, 100, 100); }));
             Expect("hat", "损坏", "打不开", p => File.WriteAllBytes(p + "/hat.png", new byte[500]));
             Expect("mouse", "空文件", "打不开", p => File.WriteAllBytes(p + "/mouse.png", new byte[0]));
             Expect("mouse", "没写完", "不完整", p => File.WriteAllBytes(p + "/mouse.png", mouse.Take(mouse.Length / 2).ToArray()));
