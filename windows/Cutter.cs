@@ -162,7 +162,7 @@ namespace InkCat
                 double template = backEdge[i];
                 int x = (int)template - 40;
                 while (x < W && f[x, y].W > 0.3f) x++;
-                double limit = Math.Min(template + 60, (last ?? template + 48) + 12);  // 跑太远、或比上一行突然外扩很多，说明连着尾巴
+                double limit = Math.Min(template + 60, (last ?? template + 44) + 16);  // 跑太远、或比上一行突然外扩很多，说明连着尾巴
                 double? found = x > (int)template - 40 && x + 2 < limit ? x + 2 : (double?)null;
                 if (found != null) last = found;
                 edges[i] = Math.Max(template, found ?? last ?? template);

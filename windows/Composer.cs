@@ -176,7 +176,7 @@ namespace InkCat
             string key;
             using (var sha = SHA256.Create())
             {
-                byte[] all = Encoding.UTF8.GetBytes("13").Concat(data.Concat(bare == null ? new byte[0][] : new[] { bare }).SelectMany(d => sha.ComputeHash(d))).ToArray();  // 拆图算法变了就加一
+                byte[] all = Encoding.UTF8.GetBytes("14").Concat(data.Concat(bare == null ? new byte[0][] : new[] { bare }).SelectMany(d => sha.ComputeHash(d))).ToArray();  // 拆图算法变了就加一
                 key = string.Concat(sha.ComputeHash(all).Select(b => b.ToString("x2")));
             }
             string cached = Path.Combine(Library.Cache, key);
