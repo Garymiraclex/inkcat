@@ -542,18 +542,24 @@ namespace InkCat
             string edge = @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe";
             if (!File.Exists(edge)) { Console.WriteLine("       没有 Edge，跳过"); return; }
             string page = Path.GetFullPath(Path.Combine(output, "page.html"));
-            File.WriteAllText(page, "<title>page</title><body style='background:#cde'><input id=a autofocus><p><input id=b type=password><script>setTimeout(()=>b.focus(),9000);setTimeout(()=>a.focus(),14000)</script>");
+            File.WriteAllText(page, "<title>page</title><body style='background:#cde'><input id=a autofocus><p><input id=b type=password><script>addEventListener('load',()=>{setTimeout(()=>b.focus(),6000);setTimeout(()=>a.focus(),14000)})</script>");
             string profile = Path.Combine(Path.GetTempPath(), "edge-test");
             var before = Screen("live_edge_before");
             Process.Start(edge, $"--no-first-run --no-default-browser-check --user-data-dir=\"{profile}\" --window-position=0,0 --window-size=500,400 --app=\"file:///{page.Replace('\\', '/')}\"");
             Prefs.Set("privacy", false);
-            Wait(8);
-            var text = Screen("live_edge_text");
-            Wait(4.5);
-            var password = Screen("live_edge_password");
-            Wait(5);
-            var again = Screen("live_edge_text2");
             r = Where();
+            // 页面加载后 6 秒焦点进密码框、14 秒回到普通框；Edge 启动快慢不定，所以等着看变化
+            Bitmap Poll(string name, Func<Bitmap, bool> ok, double seconds)
+            {
+                var t = Stopwatch.StartNew();
+                Bitmap shot;
+                do { Wait(0.4); shot = Screen(name); } while (!ok(shot) && t.Elapsed.TotalSeconds < seconds);
+                return shot;
+            }
+            Wait(3);
+            var text = Screen("live_edge_text");
+            var password = Poll("live_edge_password", b => Difference(text, b, r) > 1500, 25);
+            var again = Poll("live_edge_text2", b => Difference(text, b, r) < 600, 20);
             Console.WriteLine($"       Edge：普通框 {Difference(before, text, r)}，密码框 {Difference(text, password, r)}，回到普通框 {Difference(text, again, r)}");
             Check(Difference(text, password, r) > 1500 && Difference(text, again, r) < 600, "Edge 密码框捂眼、离开后恢复");
             foreach (var p in Process.GetProcessesByName("msedge")) try { p.Kill(); } catch (Exception) { }
