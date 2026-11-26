@@ -9,7 +9,7 @@
 
    ```text
    素材/
-   ├── 缅因/          idle.png  type_both.png  sleep.png  cover_eyes.png
+   ├── 缅因/          idle.png  type_both.png  sleep.png  cover_eyes.png（可选 no_arms.png）
    ├── 薄荷键盘/      keyboard.png  mouse.png
    ├── 红帽子/        hat.png
    └── _模板/         原版和电竞的全部部件，照着改（下划线开头的文件夹不会被读取）
@@ -55,6 +55,7 @@
 程序按固定轮廓把四张图拆成身体、双臂、尾巴、眼睛。姿势和模板差太多会拆坏，有两条路：
 
 - 让图更贴近模板。大多数情况只是手臂或尾巴的位置偏了。
+- 多交一张 `no_arms.png`（拿掉两只前爪、胸口画完整的身体）。手臂的范围会按它和 `idle` 的差别找出来，身体也直接用它，肩膀附近基本不露馅。
 - 改 [Sources/Cutter.swift](../Sources/Cutter.swift) 里的轮廓（`armL` `armR` `armM` `idleL` `raisedArms` `ruff` `inTail`）再编译。换构图还要改：
 
 | 内容 | 位置 |

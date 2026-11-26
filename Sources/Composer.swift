@@ -145,9 +145,10 @@ final class Composer {
 
     private func cook(_ pack: Pack, template: Pack, warn: (String) -> Void) throws -> CookedCat {
         let data = try Slot.cat.files.map { try Library.read(pack.file($0)) }
+        let bare = FileManager.default.fileExists(atPath: pack.file("no_arms").path) ? try Library.read(pack.file("no_arms")) : nil
         var hash = SHA256()
-        hash.update(data: Data("10".utf8))  // 拆图算法变了就加一
-        data.forEach { hash.update(data: $0) }
+        hash.update(data: Data("13".utf8))  // 拆图算法变了就加一
+        (data + [bare].compactMap { $0 }).forEach { hash.update(data: $0) }
         let key = hash.finalize().map { String(format: "%02x", $0) }.joined()
         let cached = Library.cache.appendingPathComponent(key, isDirectory: true)
         var cat: CookedCat
@@ -156,8 +157,9 @@ final class Composer {
             if let note = try? String(contentsOf: cached.appendingPathComponent("note.txt"), encoding: .utf8), !note.isEmpty { warn(note) }
         } else {
             let frames = try zip(Slot.cat.files, data).map { Raster(try Cutout.clean(Library.image($1, name: $0), name: $0)) }
-            let notes = try Self.check(frames, template: pack.id == template.id ? nil : template)
-            cat = Self.cut(Cutter.Cat(idle: frames[0], typing: frames[1], cover: frames[3], sleep: frames[2]))
+            let extra = try bare.map { Raster(try Cutout.clean(Library.image($0, name: "no_arms"), name: "no_arms")) }
+            let notes = try Self.check(frames + [extra].compactMap { $0 }, template: pack.id == template.id ? nil : template)
+            cat = Self.cut(Cutter.Cat(idle: frames[0], typing: frames[1], cover: frames[3], sleep: frames[2], bare: extra))
             Self.store(cat, at: cached, note: notes)
             if !notes.isEmpty { warn(notes) }
         }
@@ -171,7 +173,7 @@ final class Composer {
 
     /// 帧与帧对不齐就没法用；和模板差太多则提醒。
     private static func check(_ frames: [Raster], template: Pack?) throws -> String {
-        for (name, f) in zip(Slot.cat.files, frames).dropFirst() {  // 比耳朵和头顶，各帧里都不该动
+        for (name, f) in zip(Slot.cat.files + ["no_arms"], frames).dropFirst() {  // 比耳朵和头顶，各帧里都不该动
             var moved = 0, total = 0
             for y in stride(from: 40, to: 240, by: 2) { for x in stride(from: 380, to: 830, by: 2) {
                 let d = f[x, y] - frames[0][x, y]
@@ -192,7 +194,7 @@ final class Composer {
 
     static func cut(_ c: Cutter.Cat) -> CookedCat {
         typealias R = Raster
-        let cover = Cutter.tailless(Cutter.trim(c.cover))
+        let cover = Cutter.tailless(Cutter.trim(c.cover), back: c.back)
         /// 去掉桌面；腹部下缘用捂眼那张，没有桌沿。
         func torso(_ f: R) -> R {
             var o = f
@@ -214,7 +216,7 @@ final class Composer {
         func hex(_ v: SIMD4<Float>) -> Int { (0..<3).reduce(0) { $0 << 8 | Int(max(0, min(255, (v[$1] * 255).rounded()))) } }
         let joint = c.rightArmRests ? [] : near.isEmpty ? Look().joint : [hex(near[near.count * 2 / 3]), 0x3B2418]
         return CookedCat(images: [
-            "body": torso(Cutter.tailless(c.armless(c.idle))).cg,
+            "body": torso(Cutter.tailless(c.armless(c.idle), back: c.back)).cg,
             "body_cover": bodyCover.cg,
             "raised_arms": Cutter.cut(bodyCover, Cutter.raisedArms).cg,
             "tail": crop(c.tail, 860, 290, 240, 400),

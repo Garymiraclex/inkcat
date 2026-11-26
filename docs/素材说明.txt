@@ -3,6 +3,7 @@
 把装着图片的文件夹拖到这里，就会出现在「设置与演示 → 外观」里。文件夹名就是显示的名字，有哪些图就能换哪些部位：
 
   猫    idle.png  type_both.png  sleep.png  cover_eyes.png（四张都要）
+        可选 no_arms.png：同 idle，但两只前爪拿掉、胸口画完整；狗这类体型差得多的建议交
   键盘  keyboard.png
   桌垫  pad.png
   鼠标  mouse.png
