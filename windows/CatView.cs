@@ -518,6 +518,7 @@ namespace InkCat
             leftOnMouse = true;
             ShowLeftArm();
             mouser.Reach(MousePaw, 0);
+            UpdateArms();  // 左手按着的键交给右手
         }
 
         /// <summary>跟随真实光标，每秒最多 30 次。</summary>
