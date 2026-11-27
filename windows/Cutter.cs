@@ -324,6 +324,23 @@ namespace InkCat
                         if (RightArmRests) o[x, y] = o[x, y] * (1 - r) + f[x, y] * r;
                         else if (x >= 458 && y < 548 || Hypot(x - 458, y - 504) < 37) o[x, y] = f[x, y];  // 肩根保持不动
                     }
+                if (RightArmRests)  // 手臂内收挪走后，肩下的躯干本来被手臂挡着：用原画的毛垫上，免得露出缺口
+                {
+                    var torso = Mask("404,512 414,497 437,497 446,497 450,518 441,552 432,546 420,530", blur: 1);
+                    var ink = Enumerable.Range(470, 26).Select(y => f[Enumerable.Range(300, 160).First(x => f[x, y].W > 0.5f) + 2, y]).OrderBy(Luma).First();  // 肩边的描边色
+                    var edge = new[] { (404.0, 512.0), (420.0, 530.0), (432.0, 546.0) };  // 躯干外沿补一道描边
+                    double Near(int x, int y) => edge.Zip(edge.Skip(1), (a, b) =>
+                    {
+                        double dx = b.Item1 - a.Item1, dy = b.Item2 - a.Item2, t = Math.Max(0, Math.Min(1, ((x - a.Item1) * dx + (y - a.Item2) * dy) / (dx * dx + dy * dy)));
+                        return Hypot(x - a.Item1 - dx * t, y - a.Item2 - dy * t);
+                    }).Min();
+                    for (int y = 490; y < 560; y++)
+                        for (int x = 395; x < 455; x++)
+                        {
+                            float r = torso[y * W + x];
+                            o[x, y] = o[x, y] * (1 - r) + (Near(x, y) < 2.5 ? ink : f[x, y]) * r;
+                        }
+                }
                 return o;
             }
 
@@ -448,10 +465,8 @@ namespace InkCat
                     double t = (double)(from - y) / from, start = x0 + (46 + margin - x0) * t * t, old = Math.Min(edges[y], 100 + margin);
                     for (int x = (int)start; x < (int)Math.Max(old, start) + 14; x++)
                     {
-                        double d = x - start;
                         float keep = Unit((x - old - 4) / 10);  // 与原有部分渐变衔接
-                        var v = d < 5 ? fur + (ink - fur) * (float)(Math.Min(1, d + 0.3) * (1 - t) * (1 - t)) : fur;  // 描边向肩根渐隐，免得手臂挪开后在身上留一道线
-                        o[x, y] = v * Unit(y / 20.0) * (1 - keep) + o[x, y] * keep;
+                        o[x, y] = fur * Unit(y / 20.0) * (1 - keep) + o[x, y] * keep;  // 只补毛色不描边，手臂挪开后肩上不留线
                     }
                 }
             }
