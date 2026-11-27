@@ -48,7 +48,7 @@ namespace InkCat
         bool leftOnMouse = true, secure, napping, sweating, shaking;
         readonly List<DateTime> keyTimes = new List<DateTime>();
         int moodLevel;
-        DateTime lastActivity = DateTime.UtcNow, lastKey = DateTime.UtcNow, lastFollow, lastScroll, nextBlink, nextWag, nextZ;
+        DateTime lastActivity = DateTime.UtcNow, lastKey = DateTime.UtcNow, lastFollow, lastScroll, lastMouse, nextBlink, nextWag, nextZ;
 
         Look look;
         public Look Look { set { look = value; Dress(); } }
@@ -351,13 +351,19 @@ namespace InkCat
             HoldTail();
         }
 
+        internal bool PawOnMouse => leftOnMouse;
+
+        /// <summary>鼠标正在用：猫的左手优先留在鼠标上，键盘交给右手。</summary>
+        bool MouseActive => (DateTime.UtcNow - lastMouse).TotalSeconds < 0.6;
+
         /// <summary>隐私模式：只知道有人敲了一下。用哪只手、落在哪里都是随机的，不亮键、不冒气泡。</summary>
         public void TapAnonymously()
         {
             if (secure || !isPreview && PasswordGuard.IsActive) return;  // 连密码的长度和节奏也不显示
             Wake();
             NoteTyping();
-            if (random.Next(4) > 0) tapHand = Other(tapHand);
+            if (MouseActive) tapHand = Hand.Right;
+            else if (random.Next(4) > 0) tapHand = Other(tapHand);
             var hand = tapHand;
             var spots = TapSpots[hand];
             var p = spots[random.Next(spots.Length)];
@@ -426,7 +432,7 @@ namespace InkCat
             }
             else right.Reach(rightRest, 0.14);
 
-            if (Target(Hand.Left) is Point l)
+            if (Target(Hand.Left) is Point l && !MouseActive)
             {
                 leftOnMouse = false;
                 ShowLeftArm();
@@ -481,6 +487,7 @@ namespace InkCat
         public void Press(int button, bool down)
         {
             Wake();
+            lastMouse = DateTime.UtcNow;
             HoldTail();
             GrabMouse();
             pressed[button] = down;
@@ -492,7 +499,7 @@ namespace InkCat
         {
             var now = DateTime.UtcNow;
             if ((now - lastScroll).TotalSeconds < 0.18) return;
-            lastScroll = now;
+            lastScroll = lastMouse = now;
             Wake();
             GrabMouse();
             wheel.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, Seconds(0.4)));
@@ -506,7 +513,7 @@ namespace InkCat
         /// <summary>猫的左手空着时回到鼠标上。</summary>
         void GrabMouse()
         {
-            if (leftOnMouse || tapped.ContainsKey(Hand.Left) || held.Any(c => Keyboard.Find(c).Hand == Hand.Left)) return;
+            if (leftOnMouse || !MouseActive && (tapped.ContainsKey(Hand.Left) || held.Any(c => Keyboard.Find(c).Hand == Hand.Left))) return;
             leftOnMouse = true;
             ShowLeftArm();
             mouser.Reach(MousePaw, 0);
@@ -526,6 +533,7 @@ namespace InkCat
         public void SlideMouse(Point p)
         {
             Wake();
+            lastMouse = DateTime.UtcNow;
             MoveMouse(p, 0.06);
             mouser.Reach(MousePaw, 0.06);
             GrabMouse();
@@ -630,6 +638,7 @@ namespace InkCat
             UpdateMood();
             if (secure) return;
             foreach (int code in held.Where(c => !RawInput.IsDown(c)).ToArray()) Release(code);
+            if (held.Count > 0) UpdateArms();  // 鼠标闲下来后，左手转去按住的键
 
             if (held.Count == 0 && (now - lastKey).TotalSeconds > 1 && (leftRest != leftHome || rightRest != rightHome)) Rest();  // 停手后回到起手位
             for (int i = 0; i < 2; i++) if (pressed[i] && !RawInput.IsButtonDown(i)) Press(i, false);

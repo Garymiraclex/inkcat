@@ -176,7 +176,7 @@ namespace InkCat
             string key;
             using (var sha = SHA256.Create())
             {
-                byte[] all = Encoding.UTF8.GetBytes("15").Concat(data.Concat(bare == null ? new byte[0][] : new[] { bare }).SelectMany(d => sha.ComputeHash(d))).ToArray();  // 拆图算法变了就加一
+                byte[] all = Encoding.UTF8.GetBytes("16").Concat(data.Concat(bare == null ? new byte[0][] : new[] { bare }).SelectMany(d => sha.ComputeHash(d))).ToArray();  // 拆图算法变了就加一
                 key = string.Concat(sha.ComputeHash(all).Select(b => b.ToString("x2")));
             }
             string cached = Path.Combine(Library.Cache, key);
@@ -231,18 +231,27 @@ namespace InkCat
         public static CookedCat Cut(Cutter.Cat c)
         {
             var cover = Cutter.Tailless(Cutter.Trim(c.Cover), c.Back);
-            // 去掉桌面；腹部下缘用捂眼那张，没有桌沿
+            // 去掉桌面；腹部下缘用捂眼那张，没有桌沿。每列最低处往上 10 像素的毛色（避开边缘一圈亮线）向下延到桌沿线以下 16 像素，垫在键盘、鼠标垫底下，免得露出缝
             Raster Torso(Raster f)
             {
                 var o = f.Copy();
-                for (int y = 540; y < Cutter.H; y++)
-                    for (int x = 0; x < Cutter.W; x++)
+                for (int x = 0; x < Cutter.W; x++)
+                {
+                    int start = Cutter.H, last = 539;
+                    for (int y = 540; y < Cutter.H; y++) if (Cutter.OnDesk(x, y)) { start = y; break; }
+                    for (int y = 540; y < start; y++)
                     {
-                        if (Cutter.OnDesk(x, y)) { o[x, y] = System.Numerics.Vector4.Zero; continue; }
-                        if (x < 455) continue;
-                        float t = (float)Math.Max(0, Math.Min(1, (y - 614 - 0.145 * (x - 660)) / 6));
-                        o[x, y] = o[x, y] * (1 - t) + cover[x, y] * t;
+                        if (x >= 455)
+                        {
+                            float t = (float)Math.Max(0, Math.Min(1, (y - 614 - 0.145 * (x - 660)) / 6));
+                            o[x, y] = o[x, y] * (1 - t) + cover[x, y] * t;
+                        }
+                        if (o[x, y].W > 0.5f) last = y;
                     }
+                    var edge = o[x, last - 10];
+                    int reach = edge.W > 0.5f && start - last < 30 ? start + 16 : 0;  // 离桌沿太远的不延
+                    for (int y = reach > 0 ? last + 1 : start; y < Cutter.H; y++) o[x, y] = y < reach ? edge : System.Numerics.Vector4.Zero;
+                }
                 return o;
             }
             var (full, tucked) = c.RightArm();

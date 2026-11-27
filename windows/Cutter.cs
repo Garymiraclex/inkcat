@@ -102,6 +102,29 @@ namespace InkCat
             return Math.Max(Math.Max(d.X, d.Y), Math.Max(d.Z, d.W)) > 0.16f;
         }
 
+        /// <summary>只留下紧贴 seed（&gt;0.5）且不少于 minSize 像素的连通块，滤掉零星杂点。</summary>
+        public static bool[] Attached(bool[] cand, float[] seed, int minSize = 40)
+        {
+            var keep = new bool[W * H];
+            var seen = new bool[W * H];
+            for (int s = 0; s < W * H; s++)
+            {
+                if (!cand[s] || seen[s]) continue;
+                var block = new List<int> { s };
+                bool touches = false;
+                seen[s] = true;
+                for (int i = 0; i < block.Count; i++)
+                    foreach (int n in new[] { block[i] - 1, block[i] + 1, block[i] - W, block[i] + W })
+                    {
+                        if (n < 0 || n >= W * H) continue;
+                        if (seed[n] > 0.5f) touches = true;
+                        if (cand[n] && !seen[n]) { seen[n] = true; block.Add(n); }
+                    }
+                if (touches && block.Count >= minSize) foreach (int i in block) keep[i] = true;
+            }
+            return keep;
+        }
+
         // ———— 模板轮廓 ————
 
         const string armL = "443,462 428,480 402,488 376,500 352,519 337,545 330,575 329,598 335,616 349,628 368,634 386,630 400,624 411,613 417,600 420,588 428,577 446,571 462,562 465,545 466,530 466,500 462,478";
@@ -380,8 +403,11 @@ namespace InkCat
                     : "443,462 428,480 402,488 376,500 352,519 337,545 330,575 329,598 335,616 349,628 368,634 386,630 400,624 411,613 416,600 418,588 440,585 470,583 496,580 498,540 490,500 462,476";
                 // 爪子比模板胖时，压在键盘上的那段外沿描边会落在轮廓外：轮廓外 12 像素内、和捂眼图（键盘完整露出）不同的也算手臂
                 float[] inside = Mask(outline), rim = Mask(outline, grow: 12);
-                for (int i = 0; i < inside.Length; i++)
-                    if (rim[i] > inside[i] && OnDesk(i % W, i / W) && Differs(Typing.Pixels[i], Cover.Pixels[i])) inside[i] = rim[i];
+                var cand = new bool[inside.Length];
+                for (int i = 0; i < cand.Length; i++)
+                    cand[i] = rim[i] > inside[i] && OnDesk(i % W, i / W) && Differs(Typing.Pixels[i], Cover.Pixels[i]);
+                var extra = Attached(cand, inside);
+                for (int i = 0; i < inside.Length; i++) if (extra[i]) inside[i] = rim[i];
                 var src = Cut(Typing, Union(RightArmRegion(Typing), inside));
                 var o = new Raster(140 + 2 * margin, (int)table[1000].length);  // 自己的猫手臂可能更粗，直条两边各放宽
                 for (int y = 0; y < o.Height; y++)

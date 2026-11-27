@@ -28,6 +28,7 @@ namespace InkCat
             new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             Section("键位", Keys);
             Section("节奏", Rhythms);
+            Section("鼠标优先", MousePriority);
             Section("拆猫", Cooking);
             Section("坏素材", Broken);
             Section("姿势", Poses);
@@ -77,6 +78,45 @@ namespace InkCat
             Check(Count(typing) == 20, $"20 次按下抬起 → {Count(typing)} 下");
             var hold = new[] { 10000 }.Concat(Enumerable.Range(0, 90).Select(i => 10500 + i * 33));
             Check(Count(hold) <= 6, $"长按 3 秒 → {Count(hold)} 下");
+        }
+
+        /// <summary>鼠标在用时左手留在鼠标上，按键只亮灯；鼠标闲下来才去键盘。</summary>
+        static void MousePriority()
+        {
+            var cat = new CatView(preview: true) { Width = 600, Height = 448 };
+            new Window { Content = cat, SizeToContent = SizeToContent.WidthAndHeight, WindowStyle = WindowStyle.None, ShowActivated = false }.Show();
+            var at = new System.Windows.Point(0.5, 0.5);
+            cat.Key(0x21, true);  // F
+            Check(!cat.PawOnMouse, "鼠标没动时，按住 F，左手在键盘上");
+            cat.SlideMouse(at);
+            Check(cat.PawOnMouse, "按住 F 时移动鼠标，左手回到鼠标");
+            cat.Press(0, true);
+            Check(cat.PawOnMouse, "按住 F 时点击，左手在鼠标上");
+            cat.Press(0, false);
+            cat.Settle();
+            Wait(0.7);
+            cat.Key(0x2A, true);  // Shift
+            Check(!cat.PawOnMouse, "鼠标闲着时，按住 Shift，左手去键盘");
+            cat.Press(0, true);
+            Check(cat.PawOnMouse, "按住 Shift 点击，左手回到鼠标");
+            cat.Settle();
+            Wait(0.7);
+            int off = 0;
+            for (int i = 0; i < 40; i++)
+            {
+                cat.TapAnonymously();
+                cat.SlideMouse(new System.Windows.Point(i / 40.0, 0.5));
+                Wait(0.07);
+                if (!cat.PawOnMouse) off++;
+            }
+            Check(off == 0, $"隐私模式每秒 14 下 + 移动鼠标：左手离开鼠标 {off}/40 次");
+            Wait(0.7);
+            cat.Key(0x21, true);
+            Check(!cat.PawOnMouse, "鼠标闲了 0.6 秒后，F 把左手叫去键盘");
+            cat.Key(0x21, false);
+            cat.SlideMouse(at);
+            Check(cat.PawOnMouse, "松开 F 后再动鼠标，左手回到鼠标");
+            cat.Settle();
         }
 
         // ———— 换装 ————
