@@ -133,7 +133,7 @@ namespace InkCat
         const string armR = "742,508 725,533 700,544 672,552 649,559 620,575 590,600 571,624 566,646 573,664 587,677 600,684 613,686 633,685 651,677 662,661 680,648 696,643 730,644 762,643 801,638 826,632 846,619 861,602 868,578 871,555 864,530 842,510 800,498";
 
         /// <summary>右臂搭着的画法里，盖在手臂根部上面的胸毛和鬃毛。</summary>
-        static readonly float[] ruff = Mask("405,430 408,470 424,484 430,496 437,503 446,497 450,518 461,538 478,556 494,574 520,585 520,430", blur: 1, smooth: false);
+        static readonly float[] ruff = Mask("405,430 408,470 396,500 380,512 386,521 404,512 414,503 437,503 446,497 450,518 461,538 478,556 494,574 520,585 520,430", blur: 1, smooth: false);
 
         /// <summary>捂眼时抬起的双臂，配件要垫在它们下面。</summary>
         public static readonly float[] RaisedArms = Union(
@@ -450,7 +450,7 @@ namespace InkCat
                     {
                         double d = x - start;
                         float keep = Unit((x - old - 4) / 10);  // 与原有部分渐变衔接
-                        var v = d < 5 ? ink * (float)Math.Min(1, d + 0.3) : fur;
+                        var v = d < 5 ? fur + (ink - fur) * (float)(Math.Min(1, d + 0.3) * (1 - t) * (1 - t)) : fur;  // 描边向肩根渐隐，免得手臂挪开后在身上留一道线
                         o[x, y] = v * Unit(y / 20.0) * (1 - keep) + o[x, y] * keep;
                     }
                 }
