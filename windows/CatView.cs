@@ -27,15 +27,8 @@ namespace InkCat
         readonly TranslateTransform shake = new TranslateTransform();
         readonly Canvas stage, arms = Layer(), lights = Layer(), joint = Layer(), bubbles = Layer(), mood = Layer(), blush = Layer(), sweat = Layer(), mouse = Layer(), desk = Layer();
         readonly Image plate = Picture(0, 0, 1200, 896), face = Picture(400, 200, 360, 272), mouseImage = Picture(0, 0, 176, 136);
-        // 尾巴：上段绕尾根整体转；靠近尾根的一段（tailLow）按高度逐渐少转，每 0.5° 预先算好一张，甩尾时按角度换图
-        readonly Image tail = Picture(0, 0, 240, 400), tailLow = Picture(860 - TailMargin, 290 + TailBand, 240 + 2 * TailMargin, 400 - TailBand);
-        readonly Canvas tailTop = new Canvas { Width = 240, Height = 400, Clip = new RectangleGeometry(new Rect(-300, -600, 840, 600 + TailBand)) };
-        const int TailBand = 232, TailMargin = 30;
-        const double TailStep = 0.5, TailLimit = 15;
-        BitmapSource[] tailFrames = new BitmapSource[0];
-        bool following;
+        readonly Tail tail = new Tail();
         readonly Image[] squints = { Picture(400, 250, 290, 150), Picture(400, 250, 290, 150) };
-        readonly RotateTransform wag = new RotateTransform(0, 916 - 860, 652 - 290);
         readonly TranslateTransform mouseSpot = new TranslateTransform(), bob = new TranslateTransform();
         readonly Dictionary<int, Shape> glows = new Dictionary<int, Shape>();
 
@@ -52,7 +45,7 @@ namespace InkCat
         readonly List<int> held = new List<int>();
         readonly Dictionary<Hand, Point> tapped = new Dictionary<Hand, Point>();  // 隐私模式下正按着的落点
         Hand spaceHand = Hand.Left, tapHand = Hand.Left;
-        bool leftOnMouse = true, secure, napping, swishing, sweating, shaking;
+        bool leftOnMouse = true, secure, napping, sweating, shaking;
         readonly List<DateTime> keyTimes = new List<DateTime>();
         int moodLevel;
         DateTime lastActivity = DateTime.UtcNow, lastKey = DateTime.UtcNow, lastFollow, lastScroll, nextBlink, nextWag, nextZ;
@@ -96,7 +89,7 @@ namespace InkCat
 
         static Canvas Layer() => new Canvas();
 
-        static Image Picture(double x, double y, double w, double h)
+        internal static Image Picture(double x, double y, double w, double h)
         {
             var i = new Image { Width = w, Height = h, Stretch = Stretch.Fill };
             SetLeft(i, x);
@@ -143,10 +136,6 @@ namespace InkCat
         {
             void Add(params UIElement[] all) { foreach (var e in all) stage.Children.Add(e); }
 
-            tail.RenderTransform = wag;
-            SetLeft(tailTop, 860);
-            SetTop(tailTop, 290);
-            tailTop.Children.Add(tail);
             face.Opacity = 0;
             BuildMood();
             // 桌面：平时画在底图里，躲开时才单独拿出来
@@ -154,7 +143,7 @@ namespace InkCat
             desk.RenderTransform = deskShift;
             desk.Children.Add(deskPlate);
             desk.Children.Add(lights);
-            Add(tailTop, tailLow, plate, mood, face, desk);
+            Add(tail, plate, mood, face, desk);
 
             mouse.RenderTransform = mouseSpot;
             mouseImage.Effect = new DropShadowEffect { Color = Colors.Black, Opacity = 0.22, BlurRadius = 12, ShadowDepth = 11.4, Direction = 322 };
@@ -181,9 +170,7 @@ namespace InkCat
         {
             ReleaseAll();  // 键位可能变了
             double detail = Math.Min(1, 1.5 * zoom.ScaleX * VisualTreeHelper.GetDpi(this).DpiScaleX);
-            tail.Source = look.Image("tail");
-            tailFrames = Bend(look.Image("tail"));
-            tailLow.Source = TailFrame(0);
+            tail.Dress(look.Image("tail"));
             face.Source = look.Image("face_sleep");
             squints[0].Source = look.Image("eyes_focus");
             squints[1].Source = look.Image("eyes_tense");
@@ -604,90 +591,14 @@ namespace InkCat
             }
         }
 
-        /// <summary>甩两下尾巴：主摆加一点尾尖抖动，首尾平滑。</summary>
-        public void Swish()
-        {
-            if (swishing) return;
-            swishing = true;
-            var a = new DoubleAnimationUsingKeyFrames { Duration = Seconds(3.5), FillBehavior = FillBehavior.Stop };
-            for (int i = 0; i <= 60; i++)
-            {
-                double t = i / 60.0, p = t * 4 * Math.PI;
-                double angle = (10.5 * Math.Sin(p) + 3.8 * Math.Sin(2 * p + 0.7)) * Math.Min(1, Math.Min(t, 1 - t) * 6);
-                a.KeyFrames.Add(new LinearDoubleKeyFrame(angle, KeyTime.FromPercent(t)));
-            }
-            a.Completed += (s, e) => { swishing = false; Follow(false); };
-            Follow(true);
-            wag.BeginAnimation(RotateTransform.AngleProperty, a);
-        }
+        /// <summary>甩一次尾巴。</summary>
+        public void Swish() => tail.Swish();
 
         /// <summary>一有操作就收住尾巴。</summary>
         void HoldTail()
         {
             nextWag = DateTime.UtcNow.AddSeconds(1.5);
-            if (!swishing) return;
-            swishing = false;
-            var back = new DoubleAnimation(0, Seconds(0.25)) { FillBehavior = FillBehavior.Stop };
-            back.Completed += (s, e) => Follow(false);
-            wag.BeginAnimation(RotateTransform.AngleProperty, back);
-        }
-
-        /// <summary>尾巴转动时，下段每帧换成对应角度的图。</summary>
-        void Follow(bool on)
-        {
-            if (on == following) return;
-            following = on;
-            if (on) CompositionTarget.Rendering += FollowTail;
-            else
-            {
-                CompositionTarget.Rendering -= FollowTail;
-                tailLow.Source = TailFrame(0);
-            }
-        }
-
-        void FollowTail(object sender, EventArgs e) => tailLow.Source = TailFrame(wag.Angle);
-
-        BitmapSource TailFrame(double angle) =>
-            tailFrames.Length == 0 ? null : tailFrames[Math.Min(Math.Max((int)Math.Round((angle + TailLimit) / TailStep), 0), tailFrames.Length - 1)];
-
-        /// <summary>弯曲段在各个角度下的样子：每个点按所在高度的转角（顺时针为正）反推回原图取色。尾根在 (56, 362)，往上 130 行转角逐渐变满。</summary>
-        static BitmapSource[] Bend(BitmapSource image)
-        {
-            if (image == null) return new BitmapSource[0];
-            const int w = 240, h = 400, ow = w + 2 * TailMargin, oh = h - TailBand;
-            const double rx = 56, ry = 362;
-            var src = new byte[w * h * 4];
-            var full = new FormatConvertedBitmap(image, PixelFormats.Pbgra32, null, 0);
-            if (full.PixelWidth != w || full.PixelHeight != h) return new BitmapSource[0];
-            full.CopyPixels(src, w * 4, 0);
-            var weights = Enumerable.Range(0, oh).Select(i => { double t = Math.Min(Math.Max((ry - (TailBand + i + 0.5)) / (ry - TailBand), 0), 1); return t * t * (3 - 2 * t); }).ToArray();
-            int count = (int)(TailLimit / TailStep) * 2 + 1;
-            return Enumerable.Range(0, count).Select(k =>
-            {
-                double angle = (k * TailStep - TailLimit) * Math.PI / 180;
-                var o = new byte[ow * oh * 4];
-                for (int oy = 0; oy < oh; oy++)
-                {
-                    double phi = angle * weights[oy], c = Math.Cos(phi), s = Math.Sin(phi), dy = TailBand + oy + 0.5 - ry;
-                    for (int ox = 0; ox < ow; ox++)
-                    {
-                        double dx = ox - TailMargin + 0.5 - rx;
-                        double sx = rx + dx * c + dy * s - 0.5, sy = ry - dx * s + dy * c - 0.5;
-                        int x0 = (int)Math.Floor(sx), y0 = (int)Math.Floor(sy);
-                        if (x0 < -1 || y0 < -1 || x0 >= w || y0 >= h) continue;
-                        double fx = sx - x0, fy = sy - y0;
-                        for (int ch = 0; ch < 4; ch++)
-                        {
-                            double At(int x, int y) => x < 0 || y < 0 || x >= w || y >= h ? 0 : src[(y * w + x) * 4 + ch];
-                            double v = (At(x0, y0) * (1 - fx) + At(x0 + 1, y0) * fx) * (1 - fy) + (At(x0, y0 + 1) * (1 - fx) + At(x0 + 1, y0 + 1) * fx) * fy;
-                            o[(oy * ow + ox) * 4 + ch] = (byte)Math.Min(255, Math.Round(v));
-                        }
-                    }
-                }
-                var frame = BitmapSource.Create(ow, oh, 96, 96, PixelFormats.Pbgra32, null, o, ow * 4);
-                frame.Freeze();
-                return frame;
-            }).ToArray();
+            tail.Hold();
         }
 
         public void Blink()

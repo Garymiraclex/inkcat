@@ -31,6 +31,7 @@ namespace InkCat
             Section("拆猫", Cooking);
             Section("坏素材", Broken);
             Section("姿势", Poses);
+            Section("尾巴", Tails);
             Section("即时更换", Swapping);
             Section("设置窗口", Settings);
             Section("导入生图", Importing);
@@ -341,13 +342,29 @@ namespace InkCat
                 Pose("corner", () => cat.SlideMouse(new System.Windows.Point(1, 0)));
                 Pose("corner2", () => cat.SlideMouse(new System.Windows.Point(0, 1)));
                 Pose("fluster", () => cat.ShowMood(8));
-                Pose("swish", () => cat.Swish(), 0.5);
+                Pose("swish", () => cat.Swish(), 1.2);
                 Pose("cover", () => cat.SetSecure(true));
                 Pose("nap", () => { cat.SetNapping(true); cat.FloatZ(); }, 0.6);
                 window.Close();
             }
             Keyboard.Rows = Keyboard.ClassicRows;
             Check(Directory.GetFiles(output, "*_*.png").Length >= 45, "45 张姿势图");
+        }
+
+        static void Tails()
+        {
+            var tail = new Tail();
+            tail.Dress(new Look().Image("tail"));
+            tail.Draw(1, 1);  // 预热
+            var t = Stopwatch.StartNew();
+            for (int i = 0; i < 30; i++) tail.Draw(1 + i / 30.0, 1);
+            double ms = t.Elapsed.TotalMilliseconds / 30;
+            Console.WriteLine($"       单帧 {ms:0.0} 毫秒");
+            Check(ms < 33, "尾巴单帧算得过来（每秒 30 帧）");
+            tail.Swish();
+            Check(tail.Swishing, "甩尾开始");
+            tail.Hold();
+            Check(!tail.Swishing, "被打断后不再算在甩");
         }
 
         static void Settings()
