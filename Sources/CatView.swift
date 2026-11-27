@@ -88,115 +88,178 @@ private final class Arm {
     }
 }
 
-/// 尾巴：上段绕尾根整体转；靠近尾根的一段按高度逐渐少转，贴在桌上的部分不动，甩起来是弯的，不会被抬离桌面。
-/// 这一段每 0.5° 预先算好一张，甩尾时按角度换图。
+/// 尾巴：每个点按它沿尾巴离尾根的距离 u 绕尾根转一个角，转角是一道从根传到尖的行波，
+/// 所以尾尖比尾根晚，S 形也会变；贴桌的尾根部分 u 很小，几乎不动。
+/// 甩尾时每帧按转角场反向取样重画；不甩时直接显示原图。
 private final class Tail {
-    let layer = CALayer(origin: CGPoint(x: 860, y: 290), size: CGSize(width: 240, height: 400))
-    private(set) var image: NSImage?
-    private let upper = CALayer(), clip = CALayer(), lower = CALayer()
-    private var frames: [CGImage] = []
-    /// 尾根在图里的位置（左上原点）；弯曲段是它上方 130 行以下。
-    private static let root = CGPoint(x: 56, y: 362), band = 232, step = 0.5, limit = 15.0, margin = 30
+    /// 原图尺寸和尾根位置（左上原点）；画布左右多 80、上方多 60，摆动时不被裁掉。
+    private static let w = 240, h = 400, side = 80, top = 60, root = CGPoint(x: 56, y: 362)
+    /// 主摆和尾尖卷动的幅度（度）、频率（Hz）、尾尖相对尾根的相位差，以及一次甩尾的时长和淡入淡出。
+    private static let swing = 11.0, curl = 3.5, hz = 0.6, lag = 1.8
+    private static let duration = 3.5, fadeIn = 0.4, fadeOut = 0.6, release = 0.25, levels = 256
 
-    static func weight(_ y: Double) -> Double {
-        let t = min(max((Double(root.y) - y) / Double(root.y - CGFloat(band)), 0), 1)
-        return t * t * (3 - 2 * t)
-    }
+    /// 原位置原大小，不甩时显示原图。
+    let layer = CALayer(origin: CGPoint(x: 860, y: 290), size: CGSize(width: 240, height: 400))
+    private let canvas = CALayer()
+    private(set) var image: NSImage?
+    /// 原图四周加一圈透明边，方便双线性取样。
+    private var source: CGContext?
+    /// 每个像素的 u：沿尾巴到尾根的距离占最长距离的比例。
+    private var along: [Float] = []
+    private var timer: Timer?
+    private var start = 0.0
+    private var letGo: (at: Double, from: Double)?
 
     init() {
-        clip.frame = layer.bounds
-        let mask = CALayer()
-        mask.frame = CGRect(x: -300, y: 400 - CGFloat(Self.band), width: 840, height: 600)  // 只露出弯曲段以上
-        mask.backgroundColor = CGColor(gray: 0, alpha: 1)
-        clip.mask = mask
-        upper.frame = layer.bounds
-        upper.anchorPoint = CGPoint(x: Self.root.x / 240, y: 1 - Self.root.y / 400)
-        upper.position = CGPoint(x: Self.root.x, y: 400 - Self.root.y)
-        clip.addSublayer(upper)
-        lower.frame = CGRect(x: -CGFloat(Self.margin), y: 0, width: 240 + 2 * CGFloat(Self.margin), height: 400 - CGFloat(Self.band))
-        layer.addSublayer(clip)
-        layer.addSublayer(lower)
+        canvas.frame = CGRect(x: -Self.side, y: 0, width: Self.w + 2 * Self.side, height: Self.h + Self.top)
+        layer.addSublayer(canvas)
     }
 
     func dress(_ image: NSImage?) {
+        stop()
         self.image = image
-        upper.contents = image
-        frames = image?.cgImage(forProposedRect: nil, context: nil, hints: nil).map(Self.bend) ?? []
-        lower.contents = frames.isEmpty ? nil : frames[frames.count / 2]
+        layer.contents = image
+        guard let cg = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return source = nil }
+        source = Self.bitmap(Self.w + 2, Self.h + 2)
+        source?.draw(cg, in: CGRect(x: 1, y: 1, width: Self.w, height: Self.h))
+        along = Self.distances(source!)
     }
 
-    /// 弯曲段在各个角度下的样子：每个点按所在高度的转角反推回原图取色。
-    private static func bend(_ image: CGImage) -> [CGImage] {
-        let w = 240, h = 400, ow = w + 2 * margin, oh = h - band
-        var src = [UInt8](repeating: 0, count: w * h * 4)
-        CGContext(data: &src, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: Cutter.sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-            .draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-        let rx = Double(root.x), ry = Double(root.y), weights = (0..<oh).map { weight(Double(band + $0) + 0.5) }
-        let count = Int(limit / step) * 2 + 1
-        return (0..<count).map { k in
-            let angle = (Double(k) * step - limit) * .pi / 180
-            var out = [UInt8](repeating: 0, count: ow * oh * 4)
-            for oy in 0..<oh {
-                let phi = angle * weights[oy], c = cos(phi), s = sin(phi), dy = Double(band + oy) + 0.5 - ry
-                for ox in 0..<ow {
-                    let dx = Double(ox - margin) + 0.5 - rx
-                    // 屏幕上逆时针转 phi（图里 y 向下），反推原图位置
-                    let sx = rx + dx * c - dy * s - 0.5, sy = ry + dx * s + dy * c - 0.5
-                    let x0 = Int(floor(sx)), y0 = Int(floor(sy))
+    var isSwishing: Bool { timer != nil && letGo == nil }
+
+    func swish() {
+        guard source != nil else { return }
+        stop()
+        start = CACurrentMediaTime()
+        tick()
+        layer.contents = nil
+        timer = Timer(timeInterval: 1 / 30, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(timer!, forMode: .common)
+    }
+
+    /// 转角幅度很快降到 0，再恢复原图。
+    func hold() {
+        guard isSwishing else { return }
+        let now = CACurrentMediaTime()
+        letGo = (now, Self.envelope(now - start))
+    }
+
+    private func stop() {
+        timer?.invalidate()
+        timer = nil
+        letGo = nil
+        withoutAnimation {
+            canvas.contents = nil
+            layer.contents = image
+        }
+    }
+
+    private func tick() {
+        let now = CACurrentMediaTime(), t = now - start
+        var e = Self.envelope(t)
+        if let g = letGo {
+            let k = (now - g.at) / Self.release
+            if k >= 1 { return stop() }
+            e = g.from * (1 - Self.smooth(k))
+        } else if t >= Self.duration {
+            return stop()
+        }
+        let image = draw(t, e)
+        withoutAnimation { canvas.contents = image }
+    }
+
+    private static func smooth(_ x: Double) -> Double {
+        let t = min(max(x, 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
+    /// 一次甩尾的强度：开头淡入、结尾淡出。
+    private static func envelope(_ t: Double) -> Double { smooth(min(t / fadeIn, (duration - t) / fadeOut)) }
+
+    private static func bitmap(_ w: Int, _ h: Int) -> CGContext {
+        CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: Cutter.sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    }
+
+    /// 从尾根出发在不透明像素里走（8 邻域，斜走 14、直走 10），得到每个像素的 u；
+    /// 尾巴外和够不着的像素取最近的尾巴像素的值，反向取样时落在边缘外也有 u 可用。
+    private static func distances(_ source: CGContext) -> [Float] {
+        let pixels = source.data!.assumingMemoryBound(to: UInt8.self), stride = w + 2
+        let steps = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+        func neighbors(_ i: Int, _ body: (Int, Int) -> Void) {
+            let x = i % w, y = i / w
+            for (dx, dy) in steps where x + dx >= 0 && x + dx < w && y + dy >= 0 && y + dy < h {
+                body((y + dy) * w + x + dx, dx * dy == 0 ? 10 : 14)
+            }
+        }
+        var best = [Int](repeating: .max, count: w * h)
+        let seed = Int(root.y) * w + Int(root.x)
+        best[seed] = 0
+        var buckets = [[seed]], d = 0  // 按距离分桶，代替优先队列
+        while d < buckets.count {
+            for i in buckets[d] where best[i] == d {
+                neighbors(i) { n, cost in
+                    guard pixels[((n / w + 1) * stride + n % w + 1) * 4 + 3] > 8, d + cost < best[n] else { return }
+                    best[n] = d + cost
+                    while buckets.count <= d + cost { buckets.append([]) }
+                    buckets[d + cost].append(n)
+                }
+            }
+            d += 1
+        }
+        var reached = best.indices.filter { best[$0] != .max }, head = 0
+        let far = Float(d)
+        while head < reached.count {
+            let i = reached[head]
+            head += 1
+            neighbors(i) { n, _ in
+                guard best[n] == .max else { return }
+                best[n] = best[i]
+                reached.append(n)
+            }
+        }
+        return best.map { Float($0) / far }
+    }
+
+    /// 按转角场画一帧：对画布上每个点，两次迭代求出它在原图里的来处，再双线性取色。
+    private func draw(_ t: Double, _ e: Double) -> CGImage? {
+        let w = Self.w, h = Self.h, stride = w + 2, n = Self.levels
+        let phase = 2 * Double.pi * Self.hz * t
+        var cosines = [Float](repeating: 0, count: n), sines = cosines
+        for i in 0..<n {
+            let u = Double(i) / Double(n - 1), a = Self.smooth(u / 0.85)
+            let theta = e * (Self.swing * a * sin(phase - Self.lag * u) + Self.curl * u * u * sin(2 * phase - Self.lag * u - 0.6)) * .pi / 180
+            cosines[i] = Float(cos(theta))
+            sines[i] = Float(sin(theta))
+        }
+        let cw = w + 2 * Self.side, ch = h + Self.top
+        let out = Self.bitmap(cw, ch), dst = out.data!.assumingMemoryBound(to: UInt8.self)
+        let src = source!.data!.assumingMemoryBound(to: UInt8.self)
+        let rx = Float(Self.root.x), ry = Float(Self.root.y)
+        along.withUnsafeBufferPointer { u in
+            for oy in 0..<ch {
+                for ox in 0..<cw {
+                    let dx = Float(ox - Self.side) + 0.5 - rx, dy = Float(oy - Self.top) + 0.5 - ry
+                    var qx = dx, qy = dy
+                    for _ in 0..<2 {
+                        let i = Int(u[min(max(Int(ry + qy), 0), h - 1) * w + min(max(Int(rx + qx), 0), w - 1)] * Float(n - 1))
+                        qx = dx * cosines[i] + dy * sines[i]
+                        qy = dy * cosines[i] - dx * sines[i]
+                    }
+                    let sx = rx + qx - 0.5, sy = ry + qy - 0.5, fx = sx.rounded(.down), fy = sy.rounded(.down)
+                    let x0 = Int(fx), y0 = Int(fy)
                     guard x0 >= -1, y0 >= -1, x0 < w, y0 < h else { continue }
-                    let fx = sx - Double(x0), fy = sy - Double(y0)
-                    for ch in 0..<4 {
-                        func at(_ x: Int, _ y: Int) -> Double { x < 0 || y < 0 || x >= w || y >= h ? 0 : Double(src[(y * w + x) * 4 + ch]) }
-                        let v = (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) + (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy
-                        out[(oy * ow + ox) * 4 + ch] = UInt8(min(255, v.rounded()))
+                    let wx = Int((sx - fx) * 256), wy = Int((sy - fy) * 256)
+                    let a = ((y0 + 1) * stride + x0 + 1) * 4, o = (oy * cw + ox) * 4
+                    guard src[a + 3] | src[a + 7] | src[a + stride * 4 + 3] | src[a + stride * 4 + 7] != 0 else { continue }
+                    for c in 0..<4 {
+                        let upper = Int(src[a + c]) * (256 - wx) + Int(src[a + 4 + c]) * wx
+                        let lower = Int(src[a + stride * 4 + c]) * (256 - wx) + Int(src[a + stride * 4 + 4 + c]) * wx
+                        dst[o + c] = UInt8((upper * (256 - wy) + lower * wy + 32768) >> 16)
                     }
                 }
             }
-            return CGContext(data: &out, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: ow * 4, space: Cutter.sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
         }
-    }
-
-    private func frame(_ angle: CGFloat) -> CGImage? {
-        guard !frames.isEmpty else { return nil }
-        let k = Int(((Double(angle) * 180 / .pi + Self.limit) / Self.step).rounded())
-        return frames[min(max(k, 0), frames.count - 1)]
-    }
-
-    var isSwishing: Bool { upper.animation(forKey: "swish") != nil }
-
-    /// 尾尖的摆角（弧度，逆时针为正），在 `duration` 内均匀分布。
-    func swish(_ angles: [CGFloat], duration: CFTimeInterval) {
-        let turn = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-        turn.values = angles
-        turn.duration = duration
-        upper.add(turn, forKey: "swish")
-        let n = Int(duration * 60)  // 按每秒 60 帧换图，角度和上段一样线性插值
-        let images = (0...n).map { i -> CGImage? in
-            let t = Double(i) / Double(n) * Double(angles.count - 1), a = Int(t), f = CGFloat(t - Double(a))
-            return frame(angles[a] * (1 - f) + angles[min(a + 1, angles.count - 1)] * f)
-        }
-        lower.add(Self.flip(images, duration), forKey: "swish")
-    }
-
-    func hold() {
-        let from = upper.presentation()?.value(forKeyPath: "transform.rotation.z") as? CGFloat ?? 0
-        let back = CABasicAnimation(keyPath: "transform.rotation.z")
-        back.fromValue = from
-        back.toValue = 0
-        back.duration = 0.25
-        upper.removeAnimation(forKey: "swish")
-        upper.add(back, forKey: "hold")
-        lower.removeAnimation(forKey: "swish")
-        lower.add(Self.flip((0...15).map { frame(from * CGFloat(15 - $0) / 15) }, 0.25), forKey: "hold")
-    }
-
-    private static func flip(_ images: [CGImage?], _ duration: CFTimeInterval) -> CAKeyframeAnimation {
-        let a = CAKeyframeAnimation(keyPath: "contents")
-        a.values = images.map { $0 as Any }
-        a.keyTimes = images.indices.map { NSNumber(value: Double($0) / Double(images.count)) }
-        a.calculationMode = .discrete
-        a.duration = duration
-        return a
+        return out.makeImage()
     }
 }
 
@@ -891,19 +954,15 @@ final class CatView: NSView {
         }
     }
 
-    /// 甩两下尾巴：主摆加一点尾尖抖动，首尾平滑。
+    /// 甩一次尾巴。
     func swish() {
         guard !tail.isSwishing else { return }
-        tail.swish((0...60).map { i -> CGFloat in
-            let t = Double(i) / 60, p = t * 4 * .pi
-            return CGFloat(-(10.5 * sin(p) + 3.8 * sin(2 * p + 0.7)) * min(1, min(t, 1 - t) * 6) * .pi / 180)
-        }, duration: 3.5)
+        tail.swish()
     }
 
     /// 一有操作就收住尾巴。
     private func holdTail() {
         nextWag = Date() + 1.5
-        guard tail.isSwishing else { return }
         tail.hold()
     }
 
