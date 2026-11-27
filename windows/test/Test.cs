@@ -92,6 +92,8 @@ namespace InkCat
             Check(cat.PawOnMouse, "按住 F 时移动鼠标，左手回到鼠标");
             cat.Press(0, true);
             Check(cat.PawOnMouse, "按住 F 时点击，左手在鼠标上");
+            var f = Keyboard.Find(0x21).Center;
+            Check((cat.RightRest - f).Length < 50, $"按住 F 时点击，右手伸过去按 F（差 {(cat.RightRest - f).Length:F0}）");
             cat.Press(0, false);
             cat.Settle();
             Wait(0.7);

@@ -352,6 +352,7 @@ namespace InkCat
         }
 
         internal bool PawOnMouse => leftOnMouse;
+        internal Point RightRest => rightRest;
 
         /// <summary>鼠标正在用：猫的左手优先留在鼠标上，键盘交给右手。</summary>
         bool MouseActive => (DateTime.UtcNow - lastMouse).TotalSeconds < 0.6;
@@ -418,10 +419,10 @@ namespace InkCat
 
         void UpdateArms()
         {
-            // 这只手最后按住的键；空格按本次轮到的手偏向一侧
+            // 这只手最后按住的键；空格按本次轮到的手偏向一侧；鼠标正在用时整块键盘归右手，伸长了也去够
             Point? Target(Hand hand)
             {
-                var key = held.Select(Keyboard.Find).LastOrDefault(k => (k.Hand == Hand.Either ? spaceHand : k.Hand) == hand);
+                var key = held.Select(Keyboard.Find).LastOrDefault(k => (MouseActive ? Hand.Right : k.Hand == Hand.Either ? spaceHand : k.Hand) == hand);
                 if (key == null) return tapped.TryGetValue(hand, out var p) ? p : (Point?)null;
                 return key.Hand == Hand.Either ? key.Center + new Vector(hand == Hand.Left ? 50 : -60, 0) : key.Center;
             }
