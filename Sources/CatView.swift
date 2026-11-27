@@ -119,10 +119,12 @@ private final class Tail {
         stop()
         self.image = image
         layer.contents = image
-        guard let cg = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return source = nil }
-        source = Self.bitmap(Self.w + 2, Self.h + 2)
-        source?.draw(cg, in: CGRect(x: 1, y: 1, width: Self.w, height: Self.h))
-        along = Self.distances(source!)
+        source = nil
+        guard let cg = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let padded = Self.bitmap(Self.w + 2, Self.h + 2)
+        padded.draw(cg, in: CGRect(x: 1, y: 1, width: Self.w, height: Self.h))
+        guard let u = Self.distances(padded) else { return }  // 整条尾巴是空的就不甩
+        (source, along) = (padded, u)
     }
 
     var isSwishing: Bool { timer != nil && letGo == nil }
@@ -182,7 +184,7 @@ private final class Tail {
 
     /// 从尾根出发在不透明像素里走（8 邻域，斜走 14、直走 10），得到每个像素的 u；
     /// 尾巴外和够不着的像素取最近的尾巴像素的值，反向取样时落在边缘外也有 u 可用。
-    private static func distances(_ source: CGContext) -> [Float] {
+    private static func distances(_ source: CGContext) -> [Float]? {
         let pixels = source.data!.assumingMemoryBound(to: UInt8.self), stride = w + 2
         let steps = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
         func neighbors(_ i: Int, _ body: (Int, Int) -> Void) {
@@ -191,14 +193,18 @@ private final class Tail {
                 body((y + dy) * w + x + dx, dx * dy == 0 ? 10 : 14)
             }
         }
+        func opaque(_ i: Int) -> Bool { pixels[((i / w + 1) * stride + i % w + 1) * 4 + 3] > 8 }
+        // 从尾根出发；尾根那一点透明时，从离它最近的不透明像素出发
+        let at = Int(root.y) * w + Int(root.x)
+        func gap(_ i: Int) -> Int { let dx = i % w - at % w, dy = i / w - at / w; return dx * dx + dy * dy }
+        guard let seed = opaque(at) ? at : (0..<w * h).filter(opaque).min(by: { gap($0) < gap($1) }) else { return nil }
         var best = [Int](repeating: .max, count: w * h)
-        let seed = Int(root.y) * w + Int(root.x)
         best[seed] = 0
         var buckets = [[seed]], d = 0  // 按距离分桶，代替优先队列
         while d < buckets.count {
             for i in buckets[d] where best[i] == d {
                 neighbors(i) { n, cost in
-                    guard pixels[((n / w + 1) * stride + n % w + 1) * 4 + 3] > 8, d + cost < best[n] else { return }
+                    guard opaque(n), d + cost < best[n] else { return }
                     best[n] = d + cost
                     while buckets.count <= d + cost { buckets.append([]) }
                     buckets[d + cost].append(n)
@@ -207,7 +213,7 @@ private final class Tail {
             d += 1
         }
         var reached = best.indices.filter { best[$0] != .max }, head = 0
-        let far = Float(reached.map { best[$0] }.max()!)
+        let far = Float(max(reached.map { best[$0] }.max()!, 1))
         while head < reached.count {
             let i = reached[head]
             head += 1
