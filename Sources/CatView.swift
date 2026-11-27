@@ -207,7 +207,7 @@ private final class Tail {
             d += 1
         }
         var reached = best.indices.filter { best[$0] != .max }, head = 0
-        let far = Float(d)
+        let far = Float(reached.map { best[$0] }.max()!)
         while head < reached.count {
             let i = reached[head]
             head += 1
