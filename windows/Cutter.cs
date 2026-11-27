@@ -133,7 +133,7 @@ namespace InkCat
         const string armR = "742,508 725,533 700,544 672,552 649,559 620,575 590,600 571,624 566,646 573,664 587,677 600,684 613,686 633,685 651,677 662,661 680,648 696,643 730,644 762,643 801,638 826,632 846,619 861,602 868,578 871,555 864,530 842,510 800,498";
 
         /// <summary>右臂搭着的画法里，盖在手臂根部上面的胸毛和鬃毛。</summary>
-        static readonly float[] ruff = Mask("405,430 408,470 396,500 380,512 386,521 404,512 414,503 437,503 446,497 450,518 461,538 478,556 494,574 520,585 520,430", blur: 1, smooth: false);
+        static readonly float[] ruff = Mask("405,430 408,470 411,496 414,503 437,503 446,497 450,518 461,538 478,556 494,574 520,585 520,430", blur: 1, smooth: false);
 
         /// <summary>捂眼时抬起的双臂，配件要垫在它们下面。</summary>
         public static readonly float[] RaisedArms = Union(
@@ -362,9 +362,9 @@ namespace InkCat
                     }
                 if (RightArmRests)  // 手臂内收挪走后，肩下的躯干本来被手臂挡着：用原画的毛垫上，免得露出缺口
                 {
-                    var torso = Mask("404,512 414,497 437,497 446,497 450,518 441,552 432,546 420,530", blur: 1);
+                    var torso = Mask("411,506 414,497 437,497 446,497 450,518 441,552 432,546 420,530", blur: 1);
                     var ink = Enumerable.Range(470, 26).Select(y => f[Enumerable.Range(300, 160).First(x => f[x, y].W > 0.5f) + 2, y]).OrderBy(Luma).First();  // 肩边的描边色
-                    var edge = new[] { (404.0, 512.0), (420.0, 530.0), (432.0, 546.0) };  // 躯干外沿补一道描边
+                    var edge = new[] { (411.0, 506.0), (420.0, 530.0), (432.0, 546.0) };  // 躯干外沿补一道描边
                     double Near(int x, int y) => edge.Zip(edge.Skip(1), (a, b) =>
                     {
                         double dx = b.Item1 - a.Item1, dy = b.Item2 - a.Item2, t = Math.Max(0, Math.Min(1, ((x - a.Item1) * dx + (y - a.Item2) * dy) / (dx * dx + dy * dy)));
