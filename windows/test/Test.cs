@@ -759,7 +759,15 @@ namespace InkCat
             int letter = Change(() => Press(0x21, true), () => Press(0x21, false), "live_letter");
             Check(letter > 600, $"读取按键：F 亮起（变化 {letter} 点）");
             Wait(1.5);
+            // 眨眼只有 0.13 秒，连拍两张一样才算睁眼的样子
             var openEyes = Screen("live_typed");
+            for (int i = 0; i < 5; i++)
+            {
+                Wait(0.3);
+                var again = Screen("live_typed");
+                if (Difference(openEyes, again, r) < 100) break;
+                openEyes = again;
+            }
 
             // 密码框：猫捂眼；捂眼期间按键无反应
             secret.Focus();
@@ -771,7 +779,7 @@ namespace InkCat
 
             box.Focus();
             Wait(1.2);
-            Check(Difference(openEyes, Screen("live_uncovered"), r) < 600, "离开密码框后恢复");
+            Check(Enumerable.Range(0, 3).Any(i => { if (i > 0) Wait(0.3); return Difference(openEyes, Screen("live_uncovered"), r) < 600; }), "离开密码框后恢复");
 
             Prefs.Set("privacy", true);
             Wait(0.8);
