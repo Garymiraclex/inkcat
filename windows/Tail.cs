@@ -59,6 +59,7 @@ namespace InkCat
             source = new byte[Stride * (H + 2) * 4];
             for (int y = 0; y < H; y++) Buffer.BlockCopy(flat, y * W * 4, source, ((y + 1) * Stride + 1) * 4, W * 4);
             along = Distances(source);
+            if (along == null) source = null;  // 整条尾巴是空的就不甩
         }
 
         public void Swish()
@@ -125,6 +126,7 @@ namespace InkCat
         /// 尾巴外和够不着的像素取最近的尾巴像素的值，反向取样时落在边缘外也有 u 可用。</summary>
         static float[] Distances(byte[] source)
         {
+            bool Opaque(int i) => source[((i / W + 1) * Stride + i % W + 1) * 4 + 3] > 8;
             var best = Enumerable.Repeat(int.MaxValue, W * H).ToArray();
             void Visit(int i, Action<int, int> body)
             {
@@ -134,7 +136,12 @@ namespace InkCat
                         if ((dx != 0 || dy != 0) && x + dx >= 0 && x + dx < W && y + dy >= 0 && y + dy < H)
                             body((y + dy) * W + x + dx, dx * dy == 0 ? 10 : 14);
             }
-            int seed = (int)RootY * W + (int)RootX;
+            // 从尾根出发；尾根那一点透明时，从离它最近的不透明像素出发
+            int at0 = (int)RootY * W + (int)RootX, seed = -1;
+            long Gap(int i) { long dx = i % W - at0 % W, dy = i / W - at0 / W; return dx * dx + dy * dy; }
+            if (Opaque(at0)) seed = at0;
+            else foreach (int i in Enumerable.Range(0, W * H).Where(Opaque)) if (seed < 0 || Gap(i) < Gap(seed)) seed = i;
+            if (seed < 0) return null;
             best[seed] = 0;
             var buckets = new List<List<int>> { new List<int> { seed } };  // 按距离分桶，代替优先队列
             for (int d = 0; d < buckets.Count; d++)
@@ -144,14 +151,14 @@ namespace InkCat
                     int at = d;
                     Visit(i, (n, cost) =>
                     {
-                        if (source[((n / W + 1) * Stride + n % W + 1) * 4 + 3] <= 8 || at + cost >= best[n]) return;
+                        if (!Opaque(n) || at + cost >= best[n]) return;
                         best[n] = at + cost;
                         while (buckets.Count <= at + cost) buckets.Add(new List<int>());
                         buckets[at + cost].Add(n);
                     });
                 }
             var reached = Enumerable.Range(0, best.Length).Where(i => best[i] != int.MaxValue).ToList();
-            float far = reached.Max(i => best[i]);
+            float far = Math.Max(reached.Max(i => best[i]), 1);
             for (int head = 0; head < reached.Count; head++)
             {
                 int i = reached[head];
