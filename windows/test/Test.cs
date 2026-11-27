@@ -119,6 +119,15 @@ namespace InkCat
             cat.SlideMouse(at);
             Check(cat.PawOnMouse, "松开 F 后再动鼠标，左手回到鼠标");
             cat.Settle();
+            Wait(0.7);
+            cat.Key(0x21, true);
+            cat.Key(0x21, false);
+            Wait(0.3);
+            cat.Heartbeat();
+            Wait(0.3);
+            cat.Heartbeat();
+            Check(cat.PawOnMouse, "鼠标闲着敲完 F 等约 0.6 秒后，心跳让左手回到鼠标");
+            cat.Settle();
         }
 
         // ———— 换装 ————

@@ -34,13 +34,13 @@ namespace InkCat
 
         // 以猫自己的左右命名：猫的左手在画面右侧，兼管鼠标。
         readonly BendyArm right = new BendyArm("arm_right", rightHome);
-        readonly Arm left = new Arm("arm_left", new Point(815, 572), 233), mouser = new Arm("arm_mouse", new Point(804, 560), 151);
+        readonly Arm left = new Arm("arm_left", leftShoulder, 233), mouser = new Arm("arm_mouse", new Point(804, 560), 151);
 
         readonly Canvas[] buttons = { Layer(), Layer() };
         readonly bool[] pressed = new bool[2];
         readonly Path wheel = new Path { Fill = glow, Stroke = ink, StrokeThickness = 4, Opacity = 0 };
 
-        static readonly Point leftHome = new Point(600, 640), rightHome = new Point(362, 612);
+        static readonly Point leftShoulder = new Point(815, 572), leftHome = new Point(600, 640), rightHome = new Point(362, 612);
         Point leftRest = leftHome, rightRest = rightHome, mousePosition, mouseAt = new Point(0.5, 0.5);
         readonly List<int> held = new List<int>();
         readonly Dictionary<Hand, Point> tapped = new Dictionary<Hand, Point>();  // 隐私模式下正按着的落点
@@ -343,6 +343,13 @@ namespace InkCat
         static Hand Other(Hand h) => h == Hand.Left ? Hand.Right : Hand.Left;
         static Point Lifted(Point p) => p - new Vector(0, 40);
 
+        /// <summary>左手松开后停的位置：沿肩点→键位往肩膀收一点，爪子方向不变（往正上方抬会让整条手臂转平、横在胸口）。</summary>
+        static Point Drawn(Point p)
+        {
+            var v = leftShoulder - p;
+            return p + v / Math.Max(v.Length, 1) * 40;
+        }
+
         void NoteTyping()
         {
             lastKey = DateTime.UtcNow;
@@ -438,7 +445,7 @@ namespace InkCat
                 leftOnMouse = false;
                 ShowLeftArm();
                 left.Reach(l, 0.05);
-                leftRest = Lifted(l);
+                leftRest = Drawn(l);
             }
             else if (!leftOnMouse) left.Reach(leftRest, 0.14);
         }
@@ -641,6 +648,7 @@ namespace InkCat
             if (secure) return;
             foreach (int code in held.Where(c => !RawInput.IsDown(c)).ToArray()) Release(code);
             if (held.Count > 0) UpdateArms();  // 鼠标闲下来后，左手转去按住的键
+            if (held.Count == 0 && (now - lastKey).TotalSeconds > 0.4) GrabMouse();  // 敲完键别让左手悬在胸口，回到鼠标
 
             if (held.Count == 0 && (now - lastKey).TotalSeconds > 1 && (leftRest != leftHome || rightRest != rightHome)) Rest();  // 停手后回到起手位
             for (int i = 0; i < 2; i++) if (pressed[i] && !RawInput.IsButtonDown(i)) Press(i, false);
