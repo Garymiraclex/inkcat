@@ -176,7 +176,7 @@ namespace InkCat
             string key;
             using (var sha = SHA256.Create())
             {
-                byte[] all = Encoding.UTF8.GetBytes("18").Concat(data.Concat(bare == null ? new byte[0][] : new[] { bare }).SelectMany(d => sha.ComputeHash(d))).ToArray();  // 拆图算法变了就加一
+                byte[] all = Encoding.UTF8.GetBytes("19").Concat(data.Concat(bare == null ? new byte[0][] : new[] { bare }).SelectMany(d => sha.ComputeHash(d))).ToArray();  // 拆图算法变了就加一
                 key = string.Concat(sha.ComputeHash(all).Select(b => b.ToString("x2")));
             }
             string cached = Path.Combine(Library.Cache, key);
@@ -231,7 +231,9 @@ namespace InkCat
         public static CookedCat Cut(Cutter.Cat c)
         {
             var cover = Cutter.Tailless(Cutter.Trim(c.Cover), c.Back);
-            // 去掉桌面；腹部下缘用捂眼那张，没有桌沿。每列最低处往上 10 像素的毛色（避开边缘一圈亮线）向下延到桌沿线以下 16 像素，垫在键盘、鼠标垫底下，免得露出缝
+            // 去掉桌面；腹部下缘用捂眼那张，没有桌沿。每列最低处往上 10 像素的毛色（避开边缘一圈亮线）向下延到桌沿线以下 16 像素，垫在键盘、鼠标垫底下，免得露出缝；
+            // 原画桌沿描边和它下面浅色的桌沿都不要，从描边上沿（line）起全换成毛色。
+            var line = Cutter.DeskLine(cover);
             Raster Torso(Raster f)
             {
                 var o = f.Copy();
@@ -239,7 +241,8 @@ namespace InkCat
                 {
                     int start = Cutter.H, last = 539;
                     for (int y = 540; y < Cutter.H; y++) if (Cutter.OnDesk(x, y)) { start = y; break; }
-                    for (int y = 540; y < start; y++)
+                    int cut = Math.Max(540, Math.Min(start, (int)(line.k * x + line.b)));
+                    for (int y = 540; y < cut; y++)
                     {
                         if (x >= 455)
                         {
@@ -250,7 +253,7 @@ namespace InkCat
                     }
                     var edge = o[x, last - 10];
                     int reach = edge.W > 0.5f && start - last < 30 ? start + 16 : 0;  // 离桌沿太远的不延
-                    for (int y = reach > 0 ? last + 1 : start; y < Cutter.H; y++) o[x, y] = y < reach ? edge : System.Numerics.Vector4.Zero;
+                    for (int y = reach > 0 ? last + 1 : cut; y < Cutter.H; y++) o[x, y] = y < reach ? edge : System.Numerics.Vector4.Zero;
                 }
                 return o;
             }

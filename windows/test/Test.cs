@@ -193,6 +193,11 @@ namespace InkCat
                 Directory.CreateDirectory(Path.Combine(output, "cook_" + name));
                 foreach (var i in cat.Images) Save(i.Value.Image, $"cook_{name}/{i.Key}");
                 Check(cat.Images.Count == 12 && cat.Joint.Length == (name == "typing" ? 2 : 0), $"{name} 12 个部件");
+                if (name == "typing")
+                {
+                    var line = Cutter.DeskLine(Cutter.Tailless(Cutter.Trim(f[3]), new Cutter.Cat(f[0], f[1], f[3], f[2]).Back));
+                    Check(line.k > 0.1 && line.k < 0.2 && line.k * 660 + line.b > 600 && line.k * 660 + line.b < 640, $"桌沿拟合 k={line.k:F3} y660={line.k * 660 + line.b:F1}");
+                }
             }
             var r = Compose(("keyboard", "gamer"), ("pad", "gamer"), ("mouse", "gamer"), ("headset", "gamer"));
             Check(r.Problems.Count == 0 && r.Look.Images.Count == 15, "电竞合成");

@@ -143,6 +143,42 @@ namespace InkCat
         /// <summary>桌沿：以下归桌面，以上归猫。</summary>
         public static bool OnDesk(int x, int y) => y > (x < 455 ? 579 + 0.16 * (x - 330) : 634 + 0.145 * (x - 660));
 
+        /// <summary>原画里桌沿描边（深色细线）的上沿，返回直线 y = k·x + b：逐列在模板桌沿附近找最深的描边，往上走到毛色为止，拟合后再抬高一点，
+        /// 身体在这条线以下全是桌面，不能留。找不到就退回模板桌沿上 12 像素。</summary>
+        public static (double k, double b) DeskLine(Raster f)
+        {
+            var pts = new List<(double x, double y)>();
+            for (int x = 500; x < 900; x += 3)
+            {
+                int y0 = (int)(634 + 0.145 * (x - 660));
+                int m = -1;
+                float best = float.MaxValue;
+                for (int y = y0 - 16; y <= y0 + 2; y++)
+                {
+                    if (f[x, y].W <= 0.9f) continue;
+                    float l = Luma(f[x, y]);
+                    if (l < best) { best = l; m = y; }
+                }
+                if (m < 0 || best >= 0.36f) continue;
+                float mid = (best + Luma(f[x, m - 12])) / 2;
+                int top = m;
+                while (top > m - 8 && f[x, top - 1].W > 0.5f && Luma(f[x, top - 1]) < mid) top--;
+                pts.Add((x, top));
+            }
+            var kept = pts;
+            double k = 0.145, b = 634 - 0.145 * 660 - 12;
+            for (int iter = 0; iter < 3 && kept.Count >= 8; iter++)  // 最小二乘，剔掉偏离的点（爪子、毛发）后重拟
+            {
+                double n = kept.Count, sx = kept.Sum(p => p.x), sy = kept.Sum(p => p.y);
+                double sxx = kept.Sum(p => p.x * p.x), sxy = kept.Sum(p => p.x * p.y);
+                k = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+                b = (sy - k * sx) / n;
+                kept = pts.Where(p => Math.Abs(p.y - (k * p.x + b)) < 2.5).ToList();
+            }
+            if (kept.Count >= 8) b += Math.Min(0, kept.Min(p => p.y - (k * p.x + b))) - 1.5;
+            return (k, b);
+        }
+
         /// <summary>去掉左侧悬空的桌沿线。</summary>
         public static Raster Trim(Raster a)
         {

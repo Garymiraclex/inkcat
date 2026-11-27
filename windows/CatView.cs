@@ -33,7 +33,7 @@ namespace InkCat
         readonly Dictionary<int, Shape> glows = new Dictionary<int, Shape>();
 
         // 以猫自己的左右命名：猫的左手在画面右侧，兼管鼠标。
-        readonly BendyArm right = new BendyArm("arm_right");
+        readonly BendyArm right = new BendyArm("arm_right", rightHome);
         readonly Arm left = new Arm("arm_left", new Point(815, 572), 233), mouser = new Arm("arm_mouse", new Point(804, 560), 151);
 
         readonly Canvas[] buttons = { Layer(), Layer() };

@@ -90,21 +90,56 @@ namespace InkCat
         }
     }
 
-    /// <summary>短臂：素材是展平的直条（原版宽 140，自己的猫宽 180，肩在上），切成薄片沿曲线排布，肘部自然弯、爪子始终朝下。</summary>
+    /// <summary>短臂：素材是展平的直条（原版宽 140，自己的猫宽 180，肩在上），臂段切成薄片沿曲线排布，肘部自然弯；爪子是单独一块画在手腕上，只在竖直朝下附近小幅偏转。</summary>
     sealed class BendyArm : Limb
     {
-        const double length = 175, paw = 76;
-        double width = 140;
+        const double length = 175, paw = 76, lap = 10;
         const int count = 42, fields = 4;  // 每片：x、y、角度、高度
+        static readonly int sleeveRows = (int)Math.Ceiling((length - paw + lap) * count / length);
+        static readonly Brush pawFade = MakePawFade(), rootOnly = MakeRootOnly();
+        double width = 140;
         readonly string asset;
+        readonly Point rest;
         readonly Brush[][] bands = new Brush[2][];  // 外展、内收
+        readonly Brush[] paws = new Brush[2];
         ImageSource shoulder;  // 内收时盖住根部的肩头
-        bool tucked, covered;
+        bool tucked, covered, locked;
 
-        public BendyArm(string asset)
+        /// <summary><paramref name="rest"/> 是放松时的落点：那时爪子随臂自然弯，不锁。</summary>
+        public BendyArm(string asset, Point rest)
         {
-            this.asset = asset;
+            (this.asset, this.rest) = (asset, rest);
             RenderOptions.SetEdgeMode(this, EdgeMode.Aliased);  // 切片边缘若半透明，叠起来会透出网纹；轮廓的平滑来自图片本身
+        }
+
+        static Brush MakePawFade()
+        {
+            var b = new LinearGradientBrush(Colors.Transparent, Colors.White, new Point(0, 0), new Point(0, lap))
+            {
+                MappingMode = BrushMappingMode.Absolute,
+            };
+            b.Freeze();
+            return b;
+        }
+
+        /// <summary>肩头一直盖着的猫（胸毛鬃毛），手臂内收后只盖肩点 (462, 496) 半径 50 以内，免得把伸进胸前的手臂切掉一截。</summary>
+        static Brush MakeRootOnly()
+        {
+            var b = new RadialGradientBrush(new GradientStopCollection
+            {
+                new GradientStop(Colors.White, 0),
+                new GradientStop(Colors.White, 0.72),
+                new GradientStop(Colors.Transparent, 1),
+            })
+            {
+                MappingMode = BrushMappingMode.Absolute,
+                Center = new Point(462, 496),
+                GradientOrigin = new Point(462, 496),
+                RadiusX = 50,
+                RadiusY = 50,
+            };
+            b.Freeze();
+            return b;
         }
 
         // 上下各多取半片，避免弯曲处露缝
@@ -120,6 +155,7 @@ namespace InkCat
             {
                 var image = look.Image(k == 0 ? asset : asset + "_in", detail);
                 bands[k] = Enumerable.Range(0, count).Select(i => Band(image, Top(i) / count, Bottom(i) / count)).ToArray();
+                paws[k] = Band(image, 1 - paw / length, 1);
             }
             InvalidateVisual();
         }
@@ -146,11 +182,8 @@ namespace InkCat
             for (int i = 1; i <= steps; i++) arc[i] = arc[i - 1] + (samples[i] - samples[i - 1]).Length;
 
             // 素材上的位置 → 曲线弧长：爪子不伸缩，只拉伸臂段
-            double Place(double y)
-            {
-                double sleeve = length - paw, room = Math.Max(arc[steps] - paw, 20);
-                return y < sleeve ? y / sleeve * room : room + (y - sleeve);
-            }
+            double sleeve = length - paw, room = Math.Max(arc[steps] - paw, 20);
+            double Place(double y) => y < sleeve ? y / sleeve * room : room + (y - sleeve);
             Point On(double s)
             {
                 int i = Array.FindIndex(arc, a => a >= s);
@@ -159,7 +192,8 @@ namespace InkCat
             }
 
             tucked = inward > 0.15;
-            var pose = new double[count * fields + 1];
+            locked = target != rest;
+            var pose = new double[count * fields + 4];
             for (int i = 0; i < count; i++)
             {
                 double a = Place(length * i / count), b = Place(length * (i + 1) / count), mid = (a + b) / 2;
@@ -171,6 +205,15 @@ namespace InkCat
                 pose[i * fields + 3] = b - a;
             }
             pose[count * fields] = Math.Min(inward * 4, 1);
+            // 爪子：朝手腕到指尖的方向，夹在 -20°~+25°（朝右为正）；沿爪轴推一推，没夹时指尖正好落在目标上
+            var wrist = On(room);
+            var tip = On(arc[steps]);
+            var span = tip - wrist;
+            double tilt = Math.Min(Math.Max(Math.Atan2(span.X, span.Y) * 180 / Math.PI, -20), 25);
+            double rad = tilt * Math.PI / 180;
+            pose[count * fields + 1] = wrist.X + Math.Sin(rad) * (span.Length - paw);
+            pose[count * fields + 2] = wrist.Y + Math.Cos(rad) * (span.Length - paw);
+            pose[count * fields + 3] = -tilt;
             Move(pose, seconds);
         }
 
@@ -178,17 +221,31 @@ namespace InkCat
 
         protected override void Draw(DrawingContext dc, double[] pose)
         {
-            for (int i = 0; i < count; i++)
+            int k = tucked ? 1 : 0, rows = locked ? sleeveRows : count;
+            for (int i = 0; i < rows; i++)
             {
                 double h = pose[i * fields + 3];
                 dc.PushTransform(new TranslateTransform(pose[i * fields], pose[i * fields + 1]));
                 dc.PushTransform(new RotateTransform(pose[i * fields + 2]));
-                dc.DrawRectangle(bands[tucked ? 1 : 0][i], null, new Rect(-width / 2, (Top(i) - i - 0.5) * h, width, (Bottom(i) - Top(i)) * h));
+                dc.DrawRectangle(bands[k][i], null, new Rect(-width / 2, (Top(i) - i - 0.5) * h, width, (Bottom(i) - Top(i)) * h));
                 dc.Pop();
                 dc.Pop();
             }
+            if (locked)
+            {
+                dc.PushTransform(new TranslateTransform(pose[count * fields + 1], pose[count * fields + 2]));
+                dc.PushTransform(new RotateTransform(pose[count * fields + 3]));
+                dc.PushOpacityMask(pawFade);
+                dc.DrawRectangle(paws[k], null, new Rect(-width / 2, 0, width, paw));
+                dc.Pop();
+                dc.Pop();
+                dc.Pop();
+            }
+            if (covered && tucked) dc.PushOpacityMask(rootOnly);
             dc.PushOpacity(covered ? 1 : pose[count * fields]);
             dc.DrawImage(shoulder, new Rect(396, 440, 120, 120));
+            dc.Pop();
+            if (covered && tucked) dc.Pop();
         }
     }
 }
